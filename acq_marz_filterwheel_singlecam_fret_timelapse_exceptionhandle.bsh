@@ -57,7 +57,6 @@ sc.message("Successfully cleaned up");
 // User-defined parameters
 /////////////////////////////////////////////////////////////////////
 	movetimeout_s = 10*60;
-
 // Position paramters
 	use_ctr = true;
 	dist_from_ctr = 30; //in microns
@@ -357,7 +356,6 @@ for(f = 0; f < n_fields; f++) {
 	// Begin to move the stage
 	sc.message("moving to x=" + x_pos[f] + " y= " + y_end[f]);
 
-	movetimeout_s = 10*60;
 	start_movetime = System.currentTimeMillis();
 	movetime = 0;
 	moved = false;

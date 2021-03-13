@@ -9,7 +9,7 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames){
 	
 	Tic=System.currentTimeMillis();
 
-	while((ctr < cond) && (HangExit==0)) {
+	while(counterCondition) {
 
 		Toc=System.currentTimeMillis();
 
@@ -31,14 +31,22 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames){
 				// gui.addImageToAcquisition(acq_rfl, ctrs[1], 0, 0,0,img);
 				ctr[i]++;
 				Tic=System.currentTimeMillis();
-				} 
-			}
+			} 
 		} else {
 			HangExit=1;
 			throw new MMException("Acqusition hanged: no images found in buffer in time");
-		}	
+		}
+		// are all images acquired?
+		for(i=0; i<cond.length; i++){
+			counterCondition = 0;
+			// if all counters are the same value as cond then counterCondition stays 0
+			if (ctr[i] < cond[i]){
+				counterCondition = 1;
+			}
+		}
 	}
 	return datastores;
+}
 
 Datastore createDatastore(cam_name, savedir){
 	
