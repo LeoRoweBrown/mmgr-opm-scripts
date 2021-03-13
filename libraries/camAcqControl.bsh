@@ -1,0 +1,103 @@
+import org.micromanager.data.Datastore;
+
+Datastore[] acqImagesFromBuffer(datastores, conds, camNames){
+	// only works for acquire after each field, moved from the main script 
+	TicToc=1000;
+	HangExit=0;
+	int[] ctrs = new int[datastores.length];
+	java.util.Arrays.fill(ctrs, 0);
+	
+	Tic=System.currentTimeMillis();
+
+	while((ctr < cond) && (HangExit==0)) {
+
+		Toc=System.currentTimeMillis();
+
+		if ( ( Toc-Tic ) < TicToc ) 
+		{
+			
+			if (mmc.getRemainingImageCount() > 0) {
+				TaggedImage img = mmc.popNextTaggedImage();	
+				camName = img.tags.getString("Camera");
+				for(i=0; i<camNames.length; i++){
+					if (camName == camNames[i]) break;
+				}
+				Image tmp = mm.data().convertTaggedImage(img);
+
+				coordsBuilder = coordsBuilder.p(ctr[i]);
+				tmp = tmp.copyAtCoords(coordsBuilder.build());
+					
+				datastore[i].putImage(tmp);
+				// gui.addImageToAcquisition(acq_rfl, ctrs[1], 0, 0,0,img);
+				ctr[i]++;
+				Tic=System.currentTimeMillis();
+				} 
+			}
+		} else {
+			HangExit=1;
+			throw new MMException("Acqusition hanged: no images found in buffer in time");
+		}	
+	}
+	return datastores;
+
+Datastore createDatastore(cam_name, savedir){
+	
+	Datastore img_ds;
+	fileSaveFolderDir = savedir + "/";
+	new File(fileSaveFolderDir).mkdirs();
+	
+	System.gc();
+	
+	try {
+		// data() is datamanager
+		// new File(fileSaveFolderDir).mkdirs();
+		sc.message("Creating TIFF stack in " + fileSaveFolderDir + cam_name + "/");
+		img_ds = mm.data().createMultipageTIFFDatastore(fileSaveFolderDir + cam_name + "/", false, false);
+	} catch (IOException ex) {
+		mmlog = mm.getLogManager();
+		mmlog.logError(ex, "Error creating datastore in" + fileSaveFolderDir + cam_name + "/");
+		sc.message("Error in creating datastore for " + cam_name + "!");
+		throw(ex);
+		// return ex;
+	}
+	sc.message("Successfully created datastores!");
+	return img_ds;
+}
+
+
+int closeAndSaveAcq(acq_rfl,cam_rfl,reflect_dir,acq_str,cam_str,straight_dir,run,field,acq_type) {	
+	
+		labviewFileAcqStop(filedir);
+
+		mmc.stopSequenceAcquisition(cam_rfl); //stop in MM
+		mmc.stopSequenceAcquisition(cam_str); //stop in MM
+		mmc.setProperty(cam_rfl, "Triggermode","Internal"); // stop in the camera
+		mmc.setProperty(cam_str, "Triggermode","Internal"); // stop in the camera
+	
+		save_bg = System.currentTimeMillis();	
+
+		if (acq_type == 1) // save_per_field 
+			end_dir = "run_" + index + "/field_" + field + "/";
+		else
+			end_dir = "run_" + index + "/";
+			
+		// acq_rfl has been created first... there must be a better way than chance...
+		gui.getAcquisition(acq_str);  		
+		new File(straight_dir + end_dir).mkdirs();		
+		ij.IJ.run("Image Sequence... ", "format=TIFF name=run_" + index + "_ start=0 digits=5 save=" + straight_dir + end_dir);
+		gui.getAcquisition(acq_str).promptToSave(false);
+		ij.IJ.run("Close"); 
+	
+		gui.getAcquisition(acq_rfl);  // probably unnecessary if you save right after acquisition
+		// name: common stem,  digits: number of digits for the indices, save: name of the first image
+		new File(reflect_dir + end_dir).mkdirs();
+		ij.IJ.run("Image Sequence... ", "format=TIFF name=run_" + index + "_ start=0 digits=5 save=" + reflect_dir + end_dir);
+		gui.getAcquisition(acq_rfl).promptToSave(false); //just so it doesn't ask every time - DEPRECATED
+		ij.IJ.run("Close"); 
+		
+		save_end = System.currentTimeMillis();
+		run_t = Math.max(0,Math.round((save_end - save_bg)/1000)); // seconds
+		sc.message("Saving took " + run_t + "s");	
+
+		return 0;
+}

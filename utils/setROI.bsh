@@ -1,0 +1,52 @@
+x_size = 1280;
+//x_size = 1000;
+y_size = 1000;
+
+full_cam = false;
+
+cx = 1;
+cy = 1; 
+x_max = 2560;
+y_max = 2160;
+
+
+String cam1 = "pco_camera"; 	
+String cam2 = "pco_camera_bis"; 	
+
+if(full_cam){
+	mmc.setCameraDevice(cam1);
+	mmc.clearROI();
+	mmc.setCameraDevice(cam2);
+	mmc.clearROI();
+	gui.message("Cleared the ROI");
+} else {
+	
+	xSize = (int) (cx*Math.floor(x_size/cx));
+	ySize = (int) (cy*Math.floor(y_size/cy));
+
+	dx = -(xSize-x_max)/2;
+	dy = -(ySize-y_max)/2;
+	x1 = (int) (1+dx);
+	//x2 = xSize+dx;
+	y1 = (int) (1+dy);
+	//y2 = ySize+dy;
+	
+	mmc.setCameraDevice(cam1);
+	mmc.setROI(x1,y1,xSize,ySize);
+	mmc.setCameraDevice(cam2);
+	mmc.setROI(x1,y1,xSize,ySize);
+	gui.message("Changed the ROI");	
+}
+
+
+
+
+
+
+
+
+
+
+
+
+

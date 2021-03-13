@@ -1,0 +1,31 @@
+term = "\r";
+
+//
+ 
+//    Continuously read from the serial port until the terminating sequence is encountered. 
+//(CharVector) readFromSerialPort(String deviceLabel)
+//    Reads the contents of the Rx buffer. 
+
+mmc.setSerialPortCommand("COM4", "A GAP 0,0",term) ;
+mmc.getSerialPortAnswer("COM4", term);
+
+mmc.setSerialPortCommand("COM4", "A GAP 209, 0",term) ;
+mmc.getSerialPortAnswer("COM4", term);
+
+mmc.setSerialPortCommand("COM4", "A GAP 209, 0",term) ;
+String sPos = mmc.getSerialPortAnswer("COM4", term);
+Integer iPos = Integer.valueOf(sPos.substring(7));
+Integer iPos1 = 33400; // = 40
+Integer iPos2 = 58950; // = 30
+
+// Goes from 2 to 1
+Integer d = iPos1 - iPos2;
+mmc.setSerialPortCommand("COM4", "A MVP REL, 0, " + d,term);
+mmc.getSerialPortAnswer("COM4", term);
+
+//
+
+mmc.setSerialPortCommand("COM4", "A BIN",term);
+mmc.getSerialPortAnswer("COM4", term);
+
+

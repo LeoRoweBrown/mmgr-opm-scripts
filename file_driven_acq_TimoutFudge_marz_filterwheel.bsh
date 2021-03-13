@@ -1,0 +1,463 @@
+// File-driven acquisition
+// One trigger loop for all fields
+
+//source("C:/Users/OPMuser/Desktop/Scripts - System/helpers.bsh");
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+// 2.0
+// import org.micromanager.Studio;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+//import org.micromanager.data;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+
+
+source("C:/Users/OPMuser/Documents/micromanager/scripts_for_2_0/helpers.bsh");
+
+// import org.micromanager.ScriptController;
+
+// since sc.message -> sc.message
+// studio class is mm in beanshell scripting:
+mmc = mm.getCMMCore();
+sc = mm.getScriptController();
+
+print("In correct file");
+
+// Image while scanning; hardcoded positions for the spheroids
+// For FRET timelapse imaging of several fields
+// Deleted comments (see in 0.2_one_field)
+String zStageName = "ZAxis";
+// String zStageName = "ThorZDrive";
+String stageName = mmc.getXYStageDevice();
+String cam_rfl = "pco_camera_bis"; 	
+String cam_str = "pco_camera"; 	// straight
+String acq_rfl = "acq_rfl"; 	
+String acq_str = "acq_str"; 
+
+DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
+Date date = new Date();
+
+savedir = "E:/MM2_test_20210118/" + dateFormat.format(date) + "/";
+
+//straight_dir = savedir;
+//reflect_dir = savedir;
+new File(savedir).mkdirs();
+new File(savedir).mkdirs();
+
+filedir = "E:/acquisition control files/";
+
+term = "\r";
+sc.message("Cleaning up");
+/////////////////////////////////////////////////////////////////////
+// Clean everything before beginning
+cleanup(cam_rfl,cam_str,stageName);
+sc.message("Successfully cleaned up");
+//sc.message("Test");
+// User-defined parameters
+/////////////////////////////////////////////////////////////////////
+
+// Position paramters
+	use_ctr = true;
+	dist_from_ctr = 100; //in microns
+	
+	first_field = 0; // 0-indexing
+	unset("z_offset");
+	z_offset = 0;//-100000;
+	y_offset = 0;
+
+// Triggering parameters
+	acq_type = 1;
+		// Acquisition types: 
+		// 0 = Fret
+		// 1 = Alternate
+		// 2 = Simultaneous
+
+	trg_dist = 1.4; //micron
+	// Positions are in microns, exp. in ms, speed in mm/s = microns/ms. nimg is n. of images.
+	double scan_speed = 0.008; // microns/ms
+
+	exp1 = 2; //ms 
+	exp2 = 2; //ms
+	
+	las1 = 10; //las 1 
+	las2 = 10; //las 2 (for staringht) 
+
+// Time-lapse parameters
+	n_run = 1;
+	run_interval = 0; // in minutes
+	first_run =0; // 0-indexing
+
+// Saving parameters
+	save_type = 1;
+		// Saving types: 
+		// 0 = save after each run
+		// 1 = save after each field
+	
+/////////////////////////////////////////////////////////////////////
+// Filter wheel positions and laser channels
+
+int[] fw_pos = {1 2 3 4};
+double fw_angle = 60.0; // angle between filter wheel positions
+int[] las_channels = {1 2 3 4}; // DAQ channels corresponding to each fw pos
+
+	
+/////////////////////////////////////////////////////////////////////
+// Constants
+
+double travel_speed = 10.;
+
+int[] x_lim = {-12000000,1000000};
+int[] y_lim = {-12000000,1000000};
+
+inter_dist = 10000; // microns
+
+inter_time = 3000;
+
+/////////////////////////////////////////////////////////////////////	
+//writeToFile("E:/acquisition control files/las2.txt", "0.5");
+
+writeToFile(filedir + "acqType.txt","" + acq_type);
+writeToFile(filedir + "las2.txt","" + las2);
+writeToFile(filedir + "las1.txt","" + las1);
+writeToFile(filedir + "exp1.txt","" + exp1);
+writeToFile(filedir + "exp2.txt","" + exp2);
+writeToFile(filedir + "delay.txt","" + (trg_dist / (2.*scan_speed)));
+writeToFile(filedir + "run.txt","0");
+
+/////////////////////////////////////////////////////////////////////
+unset("x_pos");
+unset("y_bg");
+unset("y_end");
+unset("f_pos");
+
+int n_fields = posCtrNum();
+int[] x_pos = new int[n_fields];
+int[] y_bg = new int[n_fields];
+int[] y_end= new int[n_fields];
+int[] f_pos = new int[n_fields];
+
+if (use_ctr) {
+	int ret = convertCtr(f_pos,x_pos,y_bg,y_end,dist_from_ctr,dist_from_ctr);	
+} else {
+	int ret = convertPos(f_pos,x_pos,y_bg,y_end);
+	n_fields = posNum();
+}
+
+// Positions in microns
+
+u1 = checkPos(x_pos, x_lim);
+u2 = checkPos(y_bg, y_lim);
+u3 = checkPos(y_end, y_lim);
+if((u1+u2+u3) != 0) {
+     throw new MMException("Position errors");
+}
+
+unset("n_img");
+int[] n_img = new int[n_fields];
+java.util.Arrays.fill(n_img, 0);
+
+n_tot_img = 0;
+
+for(i = 0;i< n_fields;i++) {
+	y_end[i] = y_end[i] + y_offset;
+	y_bg[i] = y_bg[i] + y_offset;
+	f_pos[i] = f_pos[i] + z_offset;
+	n_img[i] = (int) Math.ceil((double) (((double) y_end[i]) - ((double) y_bg[i])) / ((double) trg_dist)); 
+	n_tot_img = n_tot_img + n_img[i];
+};
+
+// A bit of room in case of fail
+n_run_img = n_tot_img + n_fields;
+sc.message("" + n_run_img); 
+
+///////////////////////////////////////////////////////////////////////////
+// Save parameters
+
+BufferedWriter out = new BufferedWriter(new FileWriter(savedir + "parameters.txt"));     
+out.write("n_run ; " + n_run + "\n");
+out.write("run_interval ; " + run_interval + "\n");
+out.write("trg_dist ; " + trg_dist + "\n");
+out.write("exp1 ; " + exp1 + "\n");
+out.write("exp2 ; " + exp2 + "\n");
+out.write("scan_speed ; " + scan_speed + "\n");
+out.write("travel_speed ; " + travel_speed + "\n");
+out.write("x_pos");
+	for(i = 0;i< n_fields;i++) { 	out.write(" ; " + x_pos[i]); }; 
+out.write("\n y_bg");
+	for(i = 0;i< n_fields;i++) { 	out.write(" ; " + y_bg[i]); };
+out.write("\n y_end");
+	for(i = 0;i< n_fields;i++) { 	out.write(" ; " + y_end[i]); };
+out.write("\n f_pos");
+	for(i = 0;i< n_fields;i++) { 	out.write(" ; " + f_pos[i]); };
+out.write("\n");
+out.write("las1 ; " + las1 + "\n");
+out.write("las2 ; " + las2 + "\n");
+out.close();
+
+///////////////////////////////////////////////////////////////////////////
+
+	mmc.setCameraDevice(cam_rfl);
+		w = (int) mmc.getImageWidth();
+		h = (int) mmc.getImageHeight();
+		d = (int) mmc.getBytesPerPixel();
+		iD = (int) mmc.getImageBitDepth();
+	mmc.setExposure(exp1);
+		
+	mmc.setCameraDevice(cam_str);
+	mmc.setExposure(exp2);
+
+	// Increase focus drive speed, decrease number of microsteps (now done in the device adapter)
+	sc.message("Focus");
+	setUpFocus();
+	sc.message("Focus done");
+	mmc.setSerialPortCommand("COM1","!trig 0",term); 
+	sc.message("Travel");
+
+	travelToPosition(f_pos[0],x_pos[0],y_bg[0],travel_speed,stageName,zStageName);
+	
+	sc.message("Initializing buffer"); 
+	mmc.initializeCircularBuffer();
+
+new ij.gui.WaitForUserDialog("Configure the LabView program","Activate!").show();
+	
+for(index = first_run; index < n_run; index++) {
+	
+	time_begin = System.currentTimeMillis();
+	sc.message("Time : " + time_begin); 
+
+	//Stop the triggger
+	mmc.setSerialPortCommand("COM1","!trig 0",term); 
+	// Move to the first position
+	travelToPosition(f_pos[0],x_pos[0],y_bg[0],travel_speed,stageName,zStageName);
+
+	int[] ctrs = {0,0,0}; // Total number of images acquired, counter for reflect cam, counter for straight cam 
+
+	if (save_type == 0) {
+		throw(new NotImplementedException("Not supporting save after run in MM2 yet"));
+		n_reflect_img = n_run_img;
+		n_straight_img = n_run_img * (acq_type == 0 ? 2 : 1); // If FRET acquisition we acquire 2* more images
+		initAcq_mm2(n_reflect_img,cam_rfl,n_straight_img,cam_str,ctrs);
+	}
+		
+	last_five_occur = System.currentTimeMillis();
+
+	
+
+for(f = 0; f < n_fields; f++) {
+	for (w = 0; w < fw_pos.length; w++) { 
+	// define here so in scope
+	Datastore datastore_rfl;
+	Datastore datastore_str;
+
+    Coords.Builder coordsBuilder_reflected = Coordinates.builder();
+    Coords.Builder coordsBuilder_straight = Coordinates.builder();
+	
+	if (save_type == 1) {
+		
+		//n_reflect_img = n_img[f] + 1; 
+		//n_straight_img = (n_img[f] + 1) * (acq_type == 0 ? 2 : 1); // If FRET acquisition we acquire 2* more images
+
+		//NC removed the "+ 1" to see if this is leading to the hang issue - which it seems to be
+		n_reflect_img = n_img[f]; 
+		n_straight_img = (n_img[f]) * (acq_type == 0 ? 2 : 1); // If FRET acquisition we acquire 2* more images
+		
+		fw_str = 
+		end_dir = "run_" + index + "/field_" + f + "/";
+		//Initialize Acquisition
+		
+		// Removed because of MM2 //
+		// gui.closeAllAcquisitions();	
+	
+	    System.gc(); // added 161223 HS
+
+		mmc.setProperty(cam_rfl, "Triggermode","External");	
+		// removed because of MM2 //
+		// gui.openAcquisition(acq_rfl, savedir + end_dir, n_reflect_img, 1, 1, false, true);
+		// gui.initializeAcquisition(acq_rfl, w, h, d, iD);
+		sc.message("Creating datastores");
+		
+		datastore_rfl = createDatastore(acq_rfl, savedir + end_dir);
+	
+		mmc.setProperty(cam_str, "Triggermode","External");
+		// removed because of MM2 //
+		
+		// gui.openAcquisition(acq_str, savedir + end_dir, n_straight_img, 1, 1, false, true);
+		// gui.initializeAcquisition(acq_str, w, h, d, iD);
+		datastore_str = createDatastore(acq_str, savedir + end_dir);
+		
+		mmc.prepareSequenceAcquisition(cam_rfl);
+		mmc.prepareSequenceAcquisition(cam_str);
+		mmc.startSequenceAcquisition(cam_rfl,n_reflect_img,0,false);
+		mmc.startSequenceAcquisition(cam_str,n_straight_img,0,false);
+		sc.message("Acq started"); 
+		
+		labviewFileAcqStart(filedir);
+
+		ctrs[0] = 0; // end ctr 
+		ctrs[1] = 0; // c1 ctr
+		ctrs[2] = 0; // c2 ctr
+	}
+	// sc.message(datastore_rfl);
+	// sc.message(datastore_str);
+	// print("printing counters");
+	// print(ctrs);
+	// ctrs[0];
+	// If we save for each field, ctrs[0] is reset every time
+	cond_rfl = ctrs[0] + n_img[f] ;
+	cond_str = (ctrs[0] + n_img[f]) * (acq_type == 0 ? 2 : 1); // If FRET acquisition we expect 2* more images
+	
+	// Set-up the position-synchronised trigger
+	setUpStage(trg_dist,scan_speed);	
+	// Clear the images which may be left
+	mmc.clearCircularBuffer();
+	// Begin to move the stage
+	mmc.setXYPosition(stageName, x_pos[f], y_end[f]);	//pos[f].fin_x, pos[f].fin_y);
+	timeBeginImaging = System.currentTimeMillis();
+
+	TicToc=1000;
+	HangExit=0;
+	// Poll the images
+	//while((mmc.isSequenceRunning(cam_rfl) || mmc.isSequenceRunning(cam_str) || c1 < end_count + n_img[f] || c2 < 2*(end_count + n_img[f]))) {
+	Tic=System.currentTimeMillis();
+
+		
+	while((ctrs[1] < cond_rfl  || ctrs[2] < cond_str) && (HangExit==0)) {
+
+		Toc=System.currentTimeMillis();
+
+		if ( ( Toc-Tic ) < TicToc ) 
+		{
+			
+	   if (mmc.getRemainingImageCount() > 0) {
+			TaggedImage img = mmc.popNextTaggedImage();	
+		   camName = img.tags.getString("Camera");			
+			if (camName.equals(cam_rfl)) {
+				// replace with putImage
+				// mm.data().convertTaggedImage(img);
+				Image tmp = mm.data().convertTaggedImage(img);
+				// print("Test print for datastore putImage");
+				// print(tmp.getMetadata().getImageNumber());
+				// print("Height");
+				// print(tmp.getHeight());
+				// p is stage position i.e. image number in stack
+				coordsBuilder_reflected = coordsBuilder_reflected.p(ctrs[1]);
+				tmp = tmp.copyAtCoords(coordsBuilder_reflected.build());
+				
+				datastore_rfl.putImage(tmp);
+				// gui.addImageToAcquisition(acq_rfl, ctrs[1], 0, 0,0,img);
+				ctrs[1]++;
+				Tic=System.currentTimeMillis();
+			}	else {
+				Image tmp = mm.data().convertTaggedImage(img);
+
+				coordsBuilder_straight = coordsBuilder_straight.p(ctrs[2]);
+				tmp = tmp.copyAtCoords(coordsBuilder_straight.build());
+				
+				datastore_str.putImage(tmp);
+				// gui.addImageToAcquisition(acq_str, ctrs[2], 0, 0,0,img);
+				ctrs[2]++;
+				Tic=System.currentTimeMillis();
+			};	 
+		}
+		
+		} else {
+			HangExit=1;
+		}
+		
+	}
+
+	if ( HangExit==1 ){
+		sc.message("Acquisition Hanged, frames missing");
+	}
+	
+	timeEndImaging = System.currentTimeMillis();
+	delta_t = timeEndImaging - timeBeginImaging; // seconds
+	sc.message("Time spent imaging " + delta_t + "ms");	
+		
+	
+	sc.message("test " + ctrs[1] + " " + cond_rfl + " " +  ctrs[2] + " " + cond_str);
+
+	// Stop the triggger
+	mmc.setSerialPortCommand("COM1","!trig 0",term); 
+
+	ctrs[0] = ctrs[0] + n_img[f];
+	
+
+	if (save_type == 1)
+		//closeAndSaveAcq(acq_rfl,cam_rfl,reflect_dir, acq_str,cam_str,straight_dir,index,f,save_type);
+		
+		//sc.message("Time spent after saving " + delta_t + "ms");
+		//Stop labVIEW
+		
+		labviewFileAcqStop(filedir);
+		
+		//Stop acquisition 
+		timeBeginStopLabVIEW = System.currentTimeMillis();	
+		mmc.stopSequenceAcquisition(cam_str); //stop in MM
+			
+		mmc.stopSequenceAcquisition(cam_rfl); //stop in MM
+		timeEndStopLabVIEW = System.currentTimeMillis();
+		//mmc.setProperty(cam_rfl, "Triggermode","Internal"); // stop in the camera
+		//mmc.setProperty(cam_str, "Triggermode","Internal"); // stop in the camera
+		
+		
+		delta_t = timeEndStopLabVIEW - timeBeginStopLabVIEW; // seconds
+		sc.message("Time spent after saving " + delta_t + "ms");	
+
+		//Close acquisitions
+		// removed because of MM2
+		// gui.closeAcquisition(acq_rfl);
+		// gui.closeAcquisition(acq_str);
+		
+		// finalize saving of the datastores //
+		sc.message("Freezing (saving) datastores...");
+		datastore_rfl.freeze();
+		datastore_str.freeze();
+		
+		//gui.getAcquisition(acq_str).promptToSave(false);
+		//ij.IJ.run("Close");
+		//gui.getAcquisition(acq_rfl).promptToSave(false);
+		//ij.IJ.run("Close");  
+		
+	
+	sc.message("Field " + f +  " acquired!");	
+
+	// Move to the next position
+	g = f < (n_fields-1) ? f+1 : 0;
+	travelToPosition(f_pos[g],x_pos[g],y_bg[g],travel_speed,stageName,zStageName);
+
+// Delayed restart
+//	cur_stat = (f+1) / 5;
+//	time_end = System.currentTimeMillis();
+//	delta_t = Math.max(0,Math.round((time_end - last_five_occur)/1000)); // seconds
+//	if((f+1) == cur_stat * 5) {
+//		Thread.sleep(1000*(150 - delta_t));  // wait 2.5 minutes every 5 wells
+//		last_five_occur = System.currentTimeMillis();
+//	}
+	}
+	// haven't updated for MM2 yet //
+	}
+	if (save_type == 0){
+		throw(new NotImplementedException("Not supporting save after run in MM2 yet"));
+		// closeAndSaveAcq(acq_rfl,cam_rfl,reflect_dir, acq_str,cam_str,straight_dir,index,0,save_type);
+	}	
+	sc.message("Run " + index +  " acquired!");	
+	time_end = System.currentTimeMillis();
+	delta_t = Math.max(0,Math.round((time_end - time_begin)/1000)); // seconds
+	sc.message("Total took " + delta_t + "s");		
+	// Delayed restart - wait until next scheduled run, don't wait in the last one
+	if(index < (n_run-1) ) {
+		Thread.sleep(1000*(60*run_interval - delta_t));  
+	}	
+}
+
+// Cleans up after itself (good dog)
+cleanup(cam_rfl,cam_str,stageName);
+
+sc.message("Fini ! t =" + (System.currentTimeMillis()/60000));

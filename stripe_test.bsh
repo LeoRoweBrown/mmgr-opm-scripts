@@ -1,0 +1,15 @@
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+
+source('C:/Users/OPMuser/Documents/micromanager/scripts_for_2_0_stripes/libraries/stripedAcq.bsh');
+
+generateStripesPosXZ(35, 0.1);
