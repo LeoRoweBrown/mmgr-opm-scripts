@@ -1,5 +1,5 @@
 //sourcedir = "T:/CRUK MDPA/Software/micro-manager scripts/libraries/";
-sourcedir = "C:/Users/OPMuser/Documents/micromanager/scripts_for_2_0_4colour/libraries/";
+sourcedir = "C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/libraries/";
 
 source(sourcedir + "convertPos.bsh");
 source(sourcedir + "fileBasedControl.bsh");

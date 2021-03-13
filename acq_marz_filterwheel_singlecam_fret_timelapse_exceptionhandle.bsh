@@ -15,7 +15,7 @@ import org.micromanager.data.Image;
 import org.micromanager.data.Coords;
 import org.micromanager.data.Coordinates;
 
-source("C:/Users/OPMuser/Documents/micromanager/scripts_for_2_0_4colour/helpers.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
 
 // import org.micromanager.ScriptController;
 
