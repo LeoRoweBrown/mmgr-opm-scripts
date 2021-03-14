@@ -59,7 +59,7 @@ sc.message("Successfully cleaned up");
 	movetimeout_s = 10*60;
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 30; //in microns
+	dist_from_ctr = 250; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -90,7 +90,7 @@ sc.message("Successfully cleaned up");
 	//las4 = 5; //las 4
 
 // Time-lapse parameters
-	n_run = 2000;
+	n_run = 2;
 	run_interval = 0; // in minutes
 	first_run =0; // 0-indexing
 
@@ -291,7 +291,7 @@ for(f = 0; f < n_fields; f++) {
 	
 	Datastore datastore;
 
-    Coords.Builder coordsBuilder = Coordinates.builder();
+   Coords.Builder coordsBuilder = Coordinates.builder();
    
     // set txt files for laser params
 	writeToFile(filedir + "las.txt","" + amplitudes[w]);
@@ -362,12 +362,16 @@ for(f = 0; f < n_fields; f++) {
 	
 	// arrays because acqImagesFromBuffer can deal with N number of cameras
 	Datastore[] datastore_array = {datastore};
-	camNames = {cam}
-	cond = {cond};
-
+	String[] camName_array = {cam};
+	int[] cond_array = {cond};
+	Coords.Builder[] coordsBuilder_array = {coordsBuilder};
+	
+	acq_not_completed = true;
 	max_retries = 3;
 	n_retry = 0;
-	while(acq_not_hanged || n_retry < max_retries){
+
+	// outer loop that tries acq max_reties times until failing
+	while(acq_not_completed && n_retry < max_retries){
 		while(!moved && movetime < movetimeout_s){
 			try {
 				mmc.setXYPosition(stageName, x_pos[f], y_end[f]);
@@ -383,13 +387,16 @@ for(f = 0; f < n_fields; f++) {
 		timeBeginImaging = System.currentTimeMillis();
 
 		// do image acq
+		// datastore_array = acqImagesFromBuffer(datastore_array, cond_array, camName_array, coordsBuilder_array);
 		try {
-			datastore_array = acqImagesFromBuffer(datastore_array, conds, camNames);
+			datastore_array = acqImagesFromBuffer(datastore_array, cond_array, camName_array, coordsBuilder_array);
+			acq_not_completed = false;
 		}
 		catch(Exception e){
-			acq_not_hanged = 0;
+			acq_not_completed = true;
 			n_retry++;
-			sc.message("Failed imaging, retrying (" + n_retry + ")");	
+			sc.message("Failed imaging field, retrying (" + n_retry + ")");
+			throw e;
 		}
 		
 		timeEndImaging = System.currentTimeMillis();

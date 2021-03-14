@@ -112,23 +112,22 @@ int coreTravelWait(cur_z_pos,aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageNam
 
 int generalTravel(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,wait) {
 	
-	sc.message("current time");
+	// sc.message("current time");
 	travel_begin= System.currentTimeMillis();
-	sc.message("Setting speed");
+	// sc.message("Setting speed");
 	mmc.setProperty(stageName, "SpeedX [mm/s]",travel_speed);
 	mmc.setProperty(stageName, "SpeedY [mm/s]",travel_speed);
-	sc.message("Getting positions");
+	// sc.message("Getting positions");
 	cur_z_pos = mmc.getPosition(zStageName);	
 	if (wait == 0)
 		coreTravelNoWait(cur_z_pos,aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName);
 	else
 		 coreTravelWait(cur_z_pos,aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName);
-	sc.message("Passed if else");
 	Thread.sleep(1000);
 	cur_x_pos = mmc.getXPosition(stageName);
 	cur_y_pos = mmc.getYPosition(stageName);
 	cur_z_pos = mmc.getPosition(zStageName);
-	sc.message("Get positions");
+	// sc.message("Get positions");
 	sc.message("Move result: "+ (cur_z_pos - aim_z_pos) + " " + (cur_x_pos - aim_x_pos) + " " + (cur_y_pos - aim_y_pos));
 	travel_end = System.currentTimeMillis();
 	travel_t = Math.max(0,Math.round((travel_end - travel_begin))); // ms

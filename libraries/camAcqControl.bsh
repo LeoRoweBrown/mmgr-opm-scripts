@@ -1,6 +1,6 @@
 import org.micromanager.data.Datastore;
 
-Datastore[] acqImagesFromBuffer(datastores, conds, camNames){
+Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder){
 	// only works for acquire after each field, moved from the main script 
 	TicToc=1000;
 	HangExit=0;
@@ -8,7 +8,7 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames){
 	java.util.Arrays.fill(ctrs, 0);
 	
 	Tic=System.currentTimeMillis();
-
+	counterCondition = true;
 	while(counterCondition) {
 
 		Toc=System.currentTimeMillis();
@@ -19,29 +19,49 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames){
 			if (mmc.getRemainingImageCount() > 0) {
 				TaggedImage img = mmc.popNextTaggedImage();	
 				camName = img.tags.getString("Camera");
-				for(i=0; i<camNames.length; i++){
-					if (camName == camNames[i]) break;
+				// print("cam name = " + camName);
+				int i = 0;
+				while(i<camNames.length){
+					// print(i);
+					if (camName.equals(camNames[i])) {
+						// print("cam found");
+						break;
+					}
+					i++;
 				}
+				if (i == camNames.length){
+					print("Camera not found");
+					throw new MMException("Camera not found");
+				}
+				// print("CamName " + camName);
 				Image tmp = mm.data().convertTaggedImage(img);
-
-				coordsBuilder = coordsBuilder.p(ctr[i]);
-				tmp = tmp.copyAtCoords(coordsBuilder.build());
+				// print("camlength" + camNames.length);
+				// print(ctrs);
+				// print(i);
+				// print(ctrs[i]);
+				coordsBuilder[i] = coordsBuilder[i].p(ctrs[i]);
+				tmp = tmp.copyAtCoords(coordsBuilder[i].build());
 					
-				datastore[i].putImage(tmp);
+				datastores[i].putImage(tmp);
 				// gui.addImageToAcquisition(acq_rfl, ctrs[1], 0, 0,0,img);
-				ctr[i]++;
+				ctrs[i]++;
 				Tic=System.currentTimeMillis();
 			} 
 		} else {
 			HangExit=1;
+			print("Acquisition hanged");
 			throw new MMException("Acqusition hanged: no images found in buffer in time");
+			return datastores;
 		}
+		// print("Checking counters");
 		// are all images acquired?
-		for(i=0; i<cond.length; i++){
-			counterCondition = 0;
-			// if all counters are the same value as cond then counterCondition stays 0
-			if (ctr[i] < cond[i]){
-				counterCondition = 1;
+		for(i=0; i<conds.length; i++){
+			counterCondition = false;
+			// if all counters reach the requried value then counterCondition stays 0 and loop finishes
+			if (ctrs[i] < conds[i]){
+				// print("Counter condition set to true");
+				// print("Counter = " + ctrs[i] + " cond = " + conds[i]);
+				counterCondition = true;
 			}
 		}
 	}
