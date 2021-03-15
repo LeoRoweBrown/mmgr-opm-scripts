@@ -300,61 +300,47 @@ for(f = 0; f < n_fields; f++) {
 	writeToFile(filedir + "las_channel.txt", "" + las_channels[w]);
 	mmc.setExposure(exposures[w]);
 	sc.message("Filter position: " + fw_pos[w]);
-	
-	// move back to start position for each channel
-	travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s);
-	
-	if (save_type == 1) {
 
-		// LRB - FRET removed, single cam acq only
-		// we supply labVIEW with the filter wheel angle in degrees
-		// fw_pos_angle = fw_angle * (double)fw_pos[w];  // should coerce ?
-		end_dir = "run_" + index + "/field_" + f + "/" + wavelengths[chan];
-		
-		// if FRET we need to specify filter position so we have unique directories
-		// for repeated excitations
-		if (filter_naming == 1) end_dir = end_dir + "/" + fw_pos[w];
-		
-		//Initialize Acquisition
-	    System.gc(); // added 161223 HS
-
-		mmc.setProperty(cam, "Triggermode","External");	
-		sc.message("Creating datastore");
-		
-		datastore = createDatastore(acq, savedir + end_dir);
+	// LRB - FRET removed, single cam acq only
+	// we supply labVIEW with the filter wheel angle in degrees
+	// fw_pos_angle = fw_angle * (double)fw_pos[w];  // should coerce ?
+	end_dir = "run_" + index + "/field_" + f + "/" + wavelengths[chan];
 	
-		mmc.setProperty(cam, "Triggermode","External");
-		
-		travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s);
-		
-		mmc.prepareSequenceAcquisition(cam);
-		mmc.startSequenceAcquisition(cam,n_img[f],0,false);
-		sc.message("Acq started"); 
-		
-		// supply labview with the start command as well as
-		// the correct filter wheel position for the corresponding
-		// wavelength
-		labviewFileAcqStart(filedir);
-		sc.message("Created files");
-		ctr = 0;
-/* 		ctrs[0] = 0; // end ctr 
-		ctrs[1] = 0; // c1 ctr
-		ctrs[2] = 0; // c2 ctr */
-	}
-	// sc.message(datastore_rfl);
-	// sc.message(datastore_str);
-	// print("printing counters");
-	// print(ctrs);
-	// ctrs[0];
+	// if FRET we need to specify filter position so we have unique directories
+	// for repeated excitations
+	if (filter_naming == 1) end_dir = end_dir + "/" + fw_pos[w];
+	
+	//Initialize Acquisition
+	System.gc(); // added 161223 HS
+
+	mmc.setProperty(cam, "Triggermode","External");	
+	sc.message("Creating datastore");
+	
+	datastore = createDatastore(acq, savedir + end_dir);
+
+	mmc.setProperty(cam, "Triggermode","External");
+	
+	mmc.prepareSequenceAcquisition(cam);
+	mmc.startSequenceAcquisition(cam,n_img[f],0,false);
+	sc.message("Acq started"); 
+	
+	// supply labview with the start command as well as
+	// the correct filter wheel position for the corresponding
+	// wavelength
+	labviewFileAcqStart(filedir);
+	sc.message("Created files");
+	ctr = 0;
+/* 	ctrs[0] = 0; // end ctr 
+	ctrs[1] = 0; // c1 ctr
+	ctrs[2] = 0; // c2 ctr */
+	
 	// If we save for each field, ctrs[0] is reset every time
 	cond = ctr + n_img[f] ;
 	
 	// Set-up the position-synchronised trigger
 	setUpStage(trg_dist,scan_speed);	
 	// Clear the images which may be left
-	mmc.clearCircularBuffer();
-	// Begin to move the stage
-	sc.message("moving to x=" + x_pos[f] + " y= " + y_end[f]);
+
 
 	start_movetime = System.currentTimeMillis();
 	movetime = 0;
@@ -372,6 +358,18 @@ for(f = 0; f < n_fields; f++) {
 
 	// outer loop that tries acq max_reties times until failing
 	while(acq_not_completed && n_retry < max_retries){
+		// move back to start position for each channel
+		travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s);
+		
+		mmc.prepareSequenceAcquisition(cam);
+		mmc.startSequenceAcquisition(cam,n_img[f],0,false);
+		sc.message("Acq started"); 
+		
+		mmc.clearCircularBuffer();
+		// Begin to move the stage
+		sc.message("moving to x=" + x_pos[f] + " y= " + y_end[f]);
+		
+		
 		while(!moved && movetime < movetimeout_s){
 			try {
 				mmc.setXYPosition(stageName, x_pos[f], y_end[f]);
@@ -402,6 +400,15 @@ for(f = 0; f < n_fields; f++) {
 		timeEndImaging = System.currentTimeMillis();
 		delta_t = timeEndImaging - timeBeginImaging; // seconds
 		sc.message("Time spent imaging " + delta_t + "ms");	
+		
+		// stop acquisition and stop labVIEW 
+		mmc.stopSequenceAcquisition(cam); //stop in MM
+		timeBeginStopLabVIEW = System.currentTimeMillis();
+		labviewFileAcqStop(filedir);
+		timeEndStopLabVIEW = System.currentTimeMillis();
+		delta_t = timeEndStopLabVIEW - timeBeginStopLabVIEW; // seconds
+		sc.message("Time spent after saving " + delta_t + "ms");
+		
 	}
 	if (n_retry > max_retries){
 		throw new MMException("Exceeded max retries running acquisition for a field");
@@ -414,42 +421,19 @@ for(f = 0; f < n_fields; f++) {
 	mmc.setSerialPortCommand("COM1","!trig 0",term); 
 
 	ctr = ctr + n_img[f];
+
+	// finalize saving of the datastores //
+	sc.message("Freezing (saving) datastores...");
+	try {
+		datastore.freeze();
+		datastore.close();
+	}catch(NullPointerException nullPointer){
+		print("Problem getting images from camera, triggering problem?");
+		throw nullPointer;
+	}
 	
-	// Finalize saving?
-	if (save_type == 1)
-		//Stop labVIEW
-		
-		labviewFileAcqStop(filedir);
-		
-		//Stop acquisition 
-		timeBeginStopLabVIEW = System.currentTimeMillis();	
-		mmc.stopSequenceAcquisition(cam); //stop in MM
-
-		timeEndStopLabVIEW = System.currentTimeMillis();
-		
-		delta_t = timeEndStopLabVIEW - timeBeginStopLabVIEW; // seconds
-		sc.message("Time spent after saving " + delta_t + "ms");	
-
-		// finalize saving of the datastores //
-		sc.message("Freezing (saving) datastores...");
-		try {
-			datastore.freeze();
-			datastore.close();
-		}catch(NullPointerException nullPointer){
-			print("Problem getting images from camera, triggering problem?");
-			throw nullPointer;
-		}
-		
 	sc.message("Field " + f + " wavelength " + wavelengths[chan] +  "nm acquired!");	
 
-// Delayed restart
-//	cur_stat = (f+1) / 5;
-//	time_end = System.currentTimeMillis();
-//	delta_t = Math.max(0,Math.round((time_end - last_five_occur)/1000)); // seconds
-//	if((f+1) == cur_stat * 5) {
-//		Thread.sleep(1000*(150 - delta_t));  // wait 2.5 minutes every 5 wells
-//		last_five_occur = System.currentTimeMillis();
-//	}
 	}
 	sc.message("Finished filter loop");
 	// Move to the next position

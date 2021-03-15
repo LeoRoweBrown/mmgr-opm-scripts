@@ -6,6 +6,7 @@ source(sourcedir + "fileBasedControl.bsh");
 source(sourcedir + "travelControl.bsh");
 source(sourcedir + "camAcqControl.bsh");
 source(sourcedir + "stripedAcq.bsh");
+source(sourcedir + "serialCommands.bsh");
 
 int cleanup(cam1,cam2,stageName) {
 	// sc.message("Cleanup in correct source file 2");
