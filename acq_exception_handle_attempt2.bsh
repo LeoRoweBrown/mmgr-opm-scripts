@@ -38,7 +38,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/20210315_exceptionHandle/" + dateFormat.format(date) + "/";
+savedir = "E:/accelerator/20210315_exceptionHandle/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -56,10 +56,10 @@ sc.message("Successfully cleaned up");
 //sc.message("Test");
 // User-defined parameters
 /////////////////////////////////////////////////////////////////////
-	movetimeout_s = 0.5*60;
+
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 100; //in microns
+	dist_from_ctr = 30; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -73,11 +73,15 @@ sc.message("Successfully cleaned up");
 		// 1 = Alternate
 		// 2 = Simultaneous
 
-	filter_naming = 1;
+	filter_naming = true;
+	max_field_skips = 5;
+	max_retries = 3;
+	movetimeout_s = 0.5*60;
+	max_dropped_frames = 1;
 
 	trg_dist = 1.4; //micron
 	// Positions are in microns, exp. in ms, speed in mm/s = microns/ms. nimg is n. of images.
-	double scan_speed = 0.008; // microns/ms
+	double scan_speed = 0.2; // microns/ms
 	
 	// in this script should be just one exposure time for the one camera, hasn't been updated
 	// exp1 = 10; //ms 
@@ -90,7 +94,7 @@ sc.message("Successfully cleaned up");
 	//las4 = 5; //las 4
 
 // Time-lapse parameters
-	n_run = 2;
+	n_run = 100;
 	run_interval = 0; // in minutes
 	first_run =0; // 0-indexing
 
@@ -104,11 +108,11 @@ sc.message("Successfully cleaned up");
 // Filter wheel positions and laser channels
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-int[] fw_pos = {5, 1, 2 ,4};
+int[] fw_pos = {5,4,3,2};
 // double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {0, 3, 2, 1}; // DAQ channels corresponding to each fw pos
+int[] las_channels = {0,1,2,3}; // DAQ channels corresponding to each fw pos
 int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {3, 3, 3, 3};
+int[] amplitudes = {1, 1, 1, 1};
 int[] exposures  = {2, 2, 2, 2};
 
 if ( fw_pos.length != las_channels.length ){
@@ -234,6 +238,14 @@ out.write("\n");
 
 out.close();
 
+// LOG
+BufferedWriter log = new BufferedWriter(new FileWriter(savedir + "log.txt"));
+log.write("Start of log date: " + dateFormat.format(date) + "\n");
+log.flush();
+
+BufferedWriter dropped = new BufferedWriter(new FileWriter(savedir + "dropped_frames.txt"));
+dropped.write("Start of log date: " + dateFormat.format(date) + "\n");
+
 ///////////////////////////////////////////////////////////////////////////
 
 	mmc.setCameraDevice(cam);
@@ -257,8 +269,9 @@ out.close();
 	sc.message("Initializing buffer"); 
 	mmc.initializeCircularBuffer();
 
-// new ij.gui.WaitForUserDialog("Configure the LabView program","Activate!").show();
-	
+new ij.gui.WaitForUserDialog("Configure the LabView program","Activate!").show();
+
+skip_count = 0;
 for(index = first_run; index < n_run; index++) {
 	sc.message("Starting run loop");
 	
@@ -280,166 +293,203 @@ for(index = first_run; index < n_run; index++) {
 		
 	last_five_occur = System.currentTimeMillis();
 
-	
 // loop for fields
 for(f = 0; f < n_fields; f++) {
 	// loop for filter wheels
 	for (w = 0; w < fw_pos.length; w++) { 
-	// define here so in scope
-	chan = las_channels[w];
-	sc.message("Channel: " + chan);
-	
-	Datastore datastore;
-
-   Coords.Builder coordsBuilder = Coordinates.builder();
-   
-    // set txt files for laser params
-	writeToFile(filedir + "las.txt","" + amplitudes[w]);
-	writeToFile(filedir + "exp.txt","" + exposures[w]);
-	writeToFile(filedir + "fw_pos.txt", "" + fw_pos[w]);
-	writeToFile(filedir + "las_channel.txt", "" + las_channels[w]);
-	mmc.setExposure(exposures[w]);
-	sc.message("Filter position: " + fw_pos[w]);
-
-	// LRB - FRET removed, single cam acq only
-	// we supply labVIEW with the filter wheel angle in degrees
-	// fw_pos_angle = fw_angle * (double)fw_pos[w];  // should coerce ?
-	end_dir = "run_" + index + "/field_" + f + "/" + wavelengths[chan];
-	
-	// if FRET we need to specify filter position so we have unique directories
-	// for repeated excitations
-	if (filter_naming == 1) end_dir = end_dir + "/" + fw_pos[w];
-	
-	//Initialize Acquisition
-	System.gc(); // added 161223 HS
-
-	mmc.setProperty(cam, "Triggermode","External");	
-	sc.message("Creating datastore");
-	
-	datastore = createDatastore(acq, savedir + end_dir);
-
-	// mmc.setProperty(cam, "Triggermode","External");
-	
-	sc.message("Acq started"); 
-	
-	// supply labview with the start command as well as
-	// the correct filter wheel position for the corresponding
-	// wavelength
-
-	ctr = 0;
-/* 	ctrs[0] = 0; // end ctr 
-	ctrs[1] = 0; // c1 ctr
-	ctrs[2] = 0; // c2 ctr */
-	
-	// If we save for each field, ctrs[0] is reset every time
-	cond = ctr + n_img[f] ;
-	
-	// arrays because acqImagesFromBuffer can deal with N number of cameras
-	Datastore[] datastore_array = {datastore};
-	String[] camName_array = {cam};
-	int[] cond_array = {cond};
-	Coords.Builder[] coordsBuilder_array = {coordsBuilder};
-	
-	acq_not_completed = true;
-	max_retries = 3;
-	n_retry = 0;
-
-	// outer loop that tries acq max_reties times until failing
-	while(acq_not_completed && n_retry < max_retries){
-		// move back to start position for each channel
-		travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s);
+		not_done = true;
+		n_try = 0;
+		while (not_done && n_try < max_retries){
+			// define here so in scope
+			chan = las_channels[w];
+			sc.message("Channel: " + chan);
+			
+			Datastore datastore;
 		
-		mmc.prepareSequenceAcquisition(cam);
-		mmc.startSequenceAcquisition(cam,n_img[f],0,false);
-		sc.message("Acq started"); 
-		labviewFileAcqStart(filedir);
-		sc.message("Created files");
-		// Set-up the position-synchronised trigger
-		setUpStage(trg_dist,scan_speed);
-		// Clear the images which may be left		
-		mmc.clearCircularBuffer();
+		   Coords.Builder coordsBuilder = Coordinates.builder();
+		   
+		    // set txt files for laser params
+			writeToFile(filedir + "las.txt","" + amplitudes[w]);
+			writeToFile(filedir + "exp.txt","" + exposures[w]);
+			writeToFile(filedir + "fw_pos.txt", "" + fw_pos[w]);
+			writeToFile(filedir + "las_channel.txt", "" + las_channels[w]);
+			mmc.setExposure(exposures[w]);
+			sc.message("Filter position: " + fw_pos[w]);
+			
+			// move back to start position for each channel
+			travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s);
+			// travelToPosition(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName);
+			
+			if (save_type == 1) {
 		
-		// Begin to move the stage
-		sc.message("moving to x=" + x_pos[f] + " y= " + y_end[f]);
+				// LRB - FRET removed, single cam acq only
+				// we supply labVIEW with the filter wheel angle in degrees
+				// fw_pos_angle = fw_angle * (double)fw_pos[w];  // should coerce ?
+				end_dir = "run_" + index + "/field_" + f + "/" + wavelengths[chan];
+				
+				// if FRET we need to specify filter position so we have unique directories
+				// for repeated excitations
+				if (filter_naming ) end_dir = end_dir + "/" + fw_pos[w];
+				
+				//Initialize Acquisition
+			    System.gc(); // added 161223 HS
 		
-		start_movetime = System.currentTimeMillis();
-		movetime = 0;
-		moved = false;
-		while(!moved && movetime < movetimeout_s){
+				mmc.setProperty(cam, "Triggermode","External");	
+				sc.message("Creating datastore");
+				
+				datastore = createDatastore(acq, savedir + end_dir, true);
+			
+				mmc.setProperty(cam, "Triggermode","External");
+				
+				mmc.prepareSequenceAcquisition(cam);
+				mmc.startSequenceAcquisition(cam,n_img[f],0,false);
+				sc.message("Acq started"); 
+				
+				// supply labview with the start command as well as
+				// the correct filter wheel position for the corresponding
+				// wavelength
+				labviewFileAcqStart(filedir);
+				//sc.message("Created files");
+				ctr = 0;
+		/* 		ctrs[0] = 0; // end ctr 
+				ctrs[1] = 0; // c1 ctr
+				ctrs[2] = 0; // c2 ctr */
+			}
+		
+			// If we save for each field, ctrs[0] is reset every time
+			cond = ctr + n_img[f] ;
+			
+			// Set-up the position-synchronised trigger
+			setUpStage(trg_dist,scan_speed);	
+			// Clear the images which may be left
+			mmc.clearCircularBuffer();
+			// Begin to move the stage
+			sc.message("moving to x=" + x_pos[f] + " y= " + y_end[f]);
+			
+			try{
+				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s);
+			}
+			catch(Exception e){
+				throw new MMException("ERROR: Stage not responding");
+				print("Problem moving stage, retrying field");
+				n_try++;
+				continue;
+			}
+			print("Moved");
+			//mmc.setXYPosition(stageName, x_pos[f], y_end[f]);	//pos[f].fin_x, pos[f].fin_y);
+			timeBeginImaging = System.currentTimeMillis();
+		
+			TicToc=1000;
+			HangExit=0;
+			// Poll the images
+			//while((mmc.isSequenceRunning(cam_rfl) || mmc.isSequenceRunning(cam_str) || c1 < end_count + n_img[f] || c2 < 2*(end_count + n_img[f]))) {
+			Tic=System.currentTimeMillis();
+		
+			// print("creating arrays");
+			Datastore[] datastore_array = {datastore};
+			int[] cond_array = {cond};
+			String[] camName_array = {cam};
+			Coords.Builder[] coordsBuilder_array = {coordsBuilder};
+			// print("created arrays");
+			try{
+				// log dropped frames:
+				dropped.write("Field: "+ f + ", fw_pos: " + fw_pos[w] + ", dropped frames: ");
+				dropped.flush();
+				datastore_array = acqImagesFromBuffer(datastore_array, cond_array, camName_array, coordsBuilder_array, max_dropped_frames, dropped);
+				not_done = false;
+			}
+			catch(Exception e){
+				print("Failed in acuqiring images, retrying or skipping (" + n_try+1 + ")");
+				not_done = true;
+			}
+			
+			datastore = datastore_array[0];
+			
+			timeEndImaging = System.currentTimeMillis();
+			delta_t = timeEndImaging - timeBeginImaging; // seconds
+			sc.message("Time spent imaging " + delta_t + "ms");	
+				
+			
+			// sc.message("test " + ctrs[1] + " " + cond_rfl + " " +  ctrs[2] + " " + cond_str);
+		
+			// Stop the triggger - moved to after close the datastore for error checking
+			// mmc.setSerialPortCommand("COM1","!trig 0",term); 
+		
+			ctr = ctr + n_img[f];
+			
+			// Finalize saving?
+			//Stop labVIEW
+				
+			labviewFileAcqStop(filedir);
+			
+			//Stop acquisition 
+			timeBeginStopLabVIEW = System.currentTimeMillis();	
+			mmc.stopSequenceAcquisition(cam); //stop in MM
+	
+			timeEndStopLabVIEW = System.currentTimeMillis();
+			//mmc.setProperty(cam_rfl, "Triggermode","Internal"); // stop in the camera
+			//mmc.setProperty(cam_str, "Triggermode","Internal"); // stop in the camera
+			
+			delta_t = timeEndStopLabVIEW - timeBeginStopLabVIEW; // seconds
+			sc.message("Time spent after saving " + delta_t + "ms");	
+	
+			// finalize saving of the datastores //
+			sc.message("Freezing (saving) datastores...");
 			try {
-				mmc.setSerialPortCommand("COM1","!trig 0",term);
-				travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s);
-				mmc.setSerialPortCommand("COM1","!trig 1",term);
-				// in case move was semi-successful and we're not at the beginning, clear buffer too
-				mmc.clearCircularBuffer();
-				mmc.setXYPosition(stageName, x_pos[f], y_end[f]);
-				moved = true;
+				datastore.freeze();
+				datastore.close();
+				// print("pretending it didn't work with not_done = true");
+				// not_done = true;
+			}catch(NullPointerException nullPointer){
+				print("Problem getting images from camera, triggering problem? Retrying field");
+				not_done = true;
+				// throw nullPointer;
 			}
-			catch(Exception e) {
-				moved = false;
-				mmc.clearCircularBuffer();
-				if (movetime > movetimeout_s) throw e;
+			
+		
+				// Stop the triggger - moved to after close the datastore for error checking
+			mmc.setSerialPortCommand("COM1","!trig 0",term); 
+				
+				//gui.getAcquisition(acq_str).promptToSave(false);
+				//ij.IJ.run("Close");
+				//gui.getAcquisition(acq_rfl).promptToSave(false);
+				//ij.IJ.run("Close");  
+				
+			sc.message("Field " + f + " wavelength " + wavelengths[chan] +  "nm acquired!");	
+		
+		// Delayed restart
+		//	cur_stat = (f+1) / 5;
+		//	time_end = System.currentTimeMillis();
+		//	delta_t = Math.max(0,Math.round((time_end - last_five_occur)/1000)); // seconds
+		//	if((f+1) == cur_stat * 5) {
+		//		Thread.sleep(1000*(150 - delta_t));  // wait 2.5 minutes every 5 wells
+		//		last_five_occur = System.currentTimeMillis();
+		//	}
+			n_try++;
+		}
+		if (n_try > 1){ 
+			log.write("Field: "+ f + ", fw_pos: " + fw_pos[w] + ", retries: " + n_try + "\n");
+			log.flush();
+		}
+		if (n_try == max_retries){
+			sc.message("WARNING: Failed after " +  max_retries + " retries. Skipping");
+			// print("Failed after " +  max_retries + "retries. Skipping");
+			skip_count++;
+			log.write("Field: "+ f + ", fw_pos: " + fw_pos[w] + ", SKIPPED\n");
+			log.flush();
+			if(skip_count > max_field_skips){
+				error_str = "ERROR: Failed after skipping " +  max_field_skips + " fields.";
+				log.write("REACHED MAX SKIPS: " + max_field_skips + "\n");
+				log.close();
+				throw new MMException(error_str);
 			}
-			movetime = (System.currentTimeMillis() - start_movetime)/1000;
 		}
-		
-		timeBeginImaging = System.currentTimeMillis();
-
-		// do image acq
-		// datastore_array = acqImagesFromBuffer(datastore_array, cond_array, camName_array, coordsBuilder_array);
-		try {
-			datastore_array = acqImagesFromBuffer(datastore_array, cond_array, camName_array, coordsBuilder_array);
-			acq_not_completed = false;
-		}
-		catch(Exception e){
-			acq_not_completed = true;
-			n_retry++;
-			sc.message("Failed imaging field " + f + ", wheel position " + fw_pos[w] + ", retrying (" + n_retry + ")");
-			throw e;
-		}
-		
-		timeEndImaging = System.currentTimeMillis();
-		delta_t = timeEndImaging - timeBeginImaging; // seconds
-		sc.message("Time spent imaging " + delta_t + "ms");	
-		
-		// stop acquisition and stop labVIEW 
-		mmc.stopSequenceAcquisition(cam); //stop in MM
-		timeBeginStopLabVIEW = System.currentTimeMillis();
-		labviewFileAcqStop(filedir);
-		timeEndStopLabVIEW = System.currentTimeMillis();
-		delta_t = timeEndStopLabVIEW - timeBeginStopLabVIEW; // seconds
-		sc.message("Time spent after saving " + delta_t + "ms");
-		
-	}
-	if (n_retry > max_retries){
-		throw new MMException("Exceeded max retries running acquisition for a field");
-	}
-	datastore = datastore_array[0];
-	
-	// sc.message("test " + ctrs[1] + " " + cond_rfl + " " +  ctrs[2] + " " + cond_str);
-
-	// Stop the triggger
-	mmc.setSerialPortCommand("COM1","!trig 0",term); 
-
-	ctr = ctr + n_img[f];
-
-	// finalize saving of the datastores //
-	sc.message("Freezing (saving) datastores...");
-	try {
-		datastore.freeze();
-		datastore.close();
-	}catch(NullPointerException nullPointer){
-		print("Problem getting images from camera, triggering problem?");
-		throw nullPointer;
-	}
-	
-	sc.message("Field " + f + " wavelength " + wavelengths[chan] +  "nm acquired!");	
-
 	}
 	sc.message("Finished filter loop");
 	// Move to the next position
 	g = f < (n_fields-1) ? f+1 : 0;
 	travelToPositionRetry(f_pos[g],x_pos[g],y_bg[g],travel_speed,stageName,zStageName,movetimeout_s);
+	// travelToPosition(f_pos[g],x_pos[g],y_bg[g],travel_speed,stageName,zStageName);
 	// haven't updated for MM2 yet //
 	}
 	if (save_type == 0){
@@ -455,10 +505,12 @@ for(f = 0; f < n_fields; f++) {
 		if ((60*run_interval - delta_t) > 0){
 			Thread.sleep(1000*(60*run_interval - delta_t));
 		}
-	}	
+	}
+			
 }
 
 // Cleans up after itself (good dog)
 cleanup(cam,"",stageName);
 writeToFile(filedir + "finished.txt", "1");
+log.close();
 sc.message("Fini ! t =" + (System.currentTimeMillis()/60000));

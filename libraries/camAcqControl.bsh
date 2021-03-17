@@ -1,7 +1,9 @@
 import org.micromanager.data.Datastore;
+//import org.apache.commons.io.FileUtils
 
-Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder){
+Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_dropped, logfile){
 	// only works for acquire after each field, moved from the main script 
+	// print("updated tictoc");
 	TicToc=1000;
 	HangExit=0;
 	int[] ctrs = new int[datastores.length];
@@ -9,7 +11,8 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder){
 	
 	Tic=System.currentTimeMillis();
 	counterCondition = true;
-	while(counterCondition) {
+	total_images_missing = 0;
+	while(counterCondition && HangExit == 0) {
 
 		Toc=System.currentTimeMillis();
 
@@ -17,6 +20,7 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder){
 		{
 			
 			if (mmc.getRemainingImageCount() > 0) {
+				// print("Images in buffer");
 				TaggedImage img = mmc.popNextTaggedImage();	
 				camName = img.tags.getString("Camera");
 				// print("cam name = " + camName);
@@ -48,15 +52,15 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder){
 				Tic=System.currentTimeMillis();
 			} 
 		} else {
+			print("Reached acq time limit");
 			HangExit=1;
-			print("Acquisition hanged");
-			throw new MMException("Acqusition hanged: no images found in buffer in time");
-			return datastores;
 		}
 		// print("Checking counters");
 		// are all images acquired?
+		total_images_missing = 0;
 		for(i=0; i<conds.length; i++){
 			counterCondition = false;
+			total_images_missing += conds[i] - ctrs[i];
 			// if all counters reach the requried value then counterCondition stays 0 and loop finishes
 			if (ctrs[i] < conds[i]){
 				// print("Counter condition set to true");
@@ -65,13 +69,49 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder){
 			}
 		}
 	}
+	// Idea is that it waits until all expected images are obtained, but if it times out
+	// it allows a max total number of dropped frames (max_dropped)
+	if (logfile != null){
+		logfile.write("" + total_images_missing);
+		//logfile.flush();
+	}
+	if (HangExit == 1){
+		if (total_images_missing > max_dropped){
+			print("Acquisition hanged and exceeded max dropped frames (" + max_dropped + ")");
+			if (logfile != null){
+				logfile.write(" (ERROR) max: " + max_dropped + "\n");
+				logfile.flush();
+			}
+			throw new MMException("Acqusition hanged: no images found in buffer in time");
+			// return datastores;
+		}
+		else if (total_images_missing > 0){  // probably dont need if
+			sc.message("WARNING: Acquired with " + total_images_missing + " dropped frames");
+		}
+	}
+	else {
+		sc.message("Acquired with no dropped frames");
+	}
+	if (logfile != null){
+		logfile.write("\n");
+		logfile.flush();
+	}
+	// how do we communicate the number of dropped frames? datastore doesn't have "length"
+
 	return datastores;
 }
 
-Datastore createDatastore(cam_name, savedir){
-	
+Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_dropped){
+	BufferedWriter logfile;
+	acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_dropped, logfile);
+}
+
+Datastore createDatastore(cam_name, savedir, overwrite){
+	// just CAN NOT delete the directory in java for some reason
+	// so have to do a terrible alternative
 	Datastore img_ds;
 	fileSaveFolderDir = savedir + "/";
+	// overwrite if retrying for example
 	new File(fileSaveFolderDir).mkdirs();
 	
 	System.gc();
@@ -79,8 +119,31 @@ Datastore createDatastore(cam_name, savedir){
 	try {
 		// data() is datamanager
 		// new File(fileSaveFolderDir).mkdirs();
-		sc.message("Creating TIFF stack in " + fileSaveFolderDir + cam_name + "/");
-		img_ds = mm.data().createMultipageTIFFDatastore(fileSaveFolderDir + cam_name + "/", false, false);
+		full_dir = fileSaveFolderDir + cam_name + "/";
+		File dir = new File(full_dir);
+		
+		if (dir.isDirectory()){
+			if (!overwrite){
+				throw new IOException("File already exists, use overwrite=true "+
+				"when calling createDatastore if you want to overwrite");
+			}
+			sc.message("Overwriting stack in " + full_dir);
+			File file = new File(full_dir + "MMStack.ome.tif");
+			if(file.isFile()){
+				if (file.delete()){ 
+					sc.message("Successfully deleted");
+				} else {
+					sc.message("Failed to delete file!");
+				}
+			}
+			// now delete dir
+			if (! dir.delete()){
+				print("Failed to delete dir");
+			}
+		}
+		sc.message("Creating TIFF stack in " + full_dir);
+		img_ds = mm.data().createMultipageTIFFDatastore(full_dir, false, false);
+		
 	} catch (IOException ex) {
 		mmlog = mm.getLogManager();
 		mmlog.logError(ex, "Error creating datastore in" + fileSaveFolderDir + cam_name + "/");
@@ -90,6 +153,10 @@ Datastore createDatastore(cam_name, savedir){
 	}
 	sc.message("Successfully created datastores!");
 	return img_ds;
+}
+
+Datastore createDatastore(cam_name, savedir){
+	createDatastore(cam_name, savedir, false);
 }
 
 

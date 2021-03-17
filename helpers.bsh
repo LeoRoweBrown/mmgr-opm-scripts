@@ -26,7 +26,7 @@ int cleanup(cam1,cam2,stageName) {
 	print("cam2 is " + cam2);
 
 	if(! cam2.equals("")){
-		print.message("multi camera cleanup");
+		print("multi camera cleanup");
 		print(cam2);
 		// sc.message(cam2);
 		mmc.setProperty(cam2, "Triggermode","Internal"); // stop in the camera

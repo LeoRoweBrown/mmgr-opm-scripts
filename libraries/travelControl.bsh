@@ -143,8 +143,8 @@ int travelToPosition(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStage
 
 int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,timeout) {
 	int wait = 1;
-	start_movetime = System.currentTimeMillis();
-	movetime = 0;
+	double start_movetime = System.currentTimeMillis();
+	double movetime = 0.0;
 	moved = false;
 	
 	while(!moved && movetime < timeout){
@@ -156,7 +156,7 @@ int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,z
 			moved = false;
 			if (movetime > timeout) throw e;
 		}
-		movetime = (System.currentTimeMillis() - start_movetime)/1000;
+		movetime = (System.currentTimeMillis() - start_movetime)/1000.0;
 	}
 	
 	return 0;
@@ -165,5 +165,42 @@ int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,z
 int travelToPositionNoWait(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName) {
 	int wait = 0;
 	generalTravel(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,wait);
+	return 0;
+}
+
+int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
+	// Robust version of just setting XY position, checks if reached position
+	// but also is as fast as possible if it succeeds
+	double yStartPos = mmc.getYPosition(stageName);
+	double start_movetime = System.currentTimeMillis();
+	double movetime = 0.0;
+	moved = true;
+	do{
+		try {
+			// if it failed the first time go back to beginning
+			if (moved == false){
+				mmc.setSerialPortCommand("COM1","!trig 0",term);
+				Thread.sleep(100);  // 10Hz polling time?
+				mmc.setXYPosition(stageName, x_pos, yStartPos);
+				Thread.sleep(100);
+				mmc.setSerialPortCommand("COM1","!trig 1",term);
+				Thread.sleep(100);
+			}
+			mmc.setXYPosition(stageName, x_pos, y_pos);
+			double currentYPos = mmc.getYPosition(stageName);
+			if (Math.abs(currentYPos - y_pos) < 1.0e-1){
+				moved = true;
+			}
+		}
+		catch(Exception e) {
+			moved = false;
+			// in case move was semi-successful and we're not at the beginning, clear buffer
+			mmc.clearCircularBuffer();
+			Thread.sleep(100);
+		}
+		movetime = (System.currentTimeMillis() - start_movetime)/1000.0;
+		print("movetime: " + movetime);
+	} while(!moved && movetime < timeout_s);
+	if (movetime > movetimeout_s) throw e;
 	return 0;
 }

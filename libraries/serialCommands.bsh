@@ -1,4 +1,4 @@
-int setSerialPortCommandRetry(port, command, command_value commandTerminator, max_retries){
+int setSerialPortCommandRetry(port, command, command_value, commandTerminator, max_retries){
 	// retry version of micro-manager's setSerialPortCommandRetry
 	// usage command = "vel", command_value = "10" 
 	reached_target = 0; 
@@ -6,7 +6,7 @@ int setSerialPortCommandRetry(port, command, command_value commandTerminator, ma
 	while (!reached_target && n < max_retries){
 		cmd = "!" + command + " " + command_value;
 		cmd_get = "?" + command;
-		mmc.setSerialPortCommand(port,cmd,commandTerminator;
+		mmc.setSerialPortCommand(port,cmd,commandTerminator);
 		Thread.sleep(100);
 		mmc.setSerialPortCommand(port,cmd_get,commandTerminator); 
 		Thread.sleep(100);
@@ -18,3 +18,4 @@ int setSerialPortCommandRetry(port, command, command_value commandTerminator, ma
 		return 1;
 	}
 	return 0;
+}

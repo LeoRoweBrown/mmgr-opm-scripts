@@ -80,13 +80,13 @@ sc.message("Successfully cleaned up");
 
 	trg_dist = 1.4; //micron
 	// Positions are in microns, exp. in ms, speed in mm/s = microns/ms. nimg is n. of images.
-	double scan_speed = 0.008; // microns/ms
+	double scan_speed = 0.2; // microns/ms
 
 	exp1 = 2; //ms 
 	exp2 = 2; //ms
 	
-	las1 = 10; //las 1 
-	las2 = 10; //las 2 (for staringht) 
+	las1 = 5; //las 1 
+	las2 = 5; //las 2 (for staringht) 
 
 // Time-lapse parameters
 	n_run = 1;
@@ -102,9 +102,9 @@ sc.message("Successfully cleaned up");
 /////////////////////////////////////////////////////////////////////
 // Filter wheel positions and laser channels
 
-int[] fw_pos = {1 2 3 4};
+int[] fw_pos = {1, 2, 3, 4};
 double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {1 2 3 4}; // DAQ channels corresponding to each fw pos
+int[] las_channels = {1, 2, 3, 4}; // DAQ channels corresponding to each fw pos
 
 	
 /////////////////////////////////////////////////////////////////////

@@ -15,7 +15,7 @@ import org.micromanager.data.Image;
 import org.micromanager.data.Coords;
 import org.micromanager.data.Coordinates;
 
-source("C:/Users/OPMuser/Documents/micromanager/scripts_for_2_0_4colour/helpers.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
 
 // import org.micromanager.ScriptController;
 
@@ -38,7 +38,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/accelerator/20220312_timeLapseTest_fret_singleCam2" + dateFormat.format(date) + "/";
+savedir = "E:/accelerator/20210315_bakal01_erk/main/retry/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -59,7 +59,7 @@ sc.message("Successfully cleaned up");
 
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 50; //in microns
+	dist_from_ctr = 2000; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -104,12 +104,12 @@ sc.message("Successfully cleaned up");
 // Filter wheel positions and laser channels
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-int[] fw_pos = {5, 1};
+int[] fw_pos = {1, 2, 4, 0};
 // double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {0, 3}; // DAQ channels corresponding to each fw pos
+int[] las_channels = {2, 2, 0, 0}; // DAQ channels corresponding to each fw pos
 int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {5, 5};
-int[] exposures  = {2, 2};
+int[] amplitudes = {5, 5, 5, 1};
+int[] exposures  = {2, 2, 2, 2};
 
 if ( fw_pos.length != las_channels.length ){
 	throw new MMException("Laser channels array not same length as filter wheel positions array");
@@ -410,8 +410,8 @@ for(f = 0; f < n_fields; f++) {
 	
 	// sc.message("test " + ctrs[1] + " " + cond_rfl + " " +  ctrs[2] + " " + cond_str);
 
-	// Stop the triggger
-	mmc.setSerialPortCommand("COM1","!trig 0",term); 
+	// Stop the triggger - moved to after close the datastore for error checking
+	// mmc.setSerialPortCommand("COM1","!trig 0",term); 
 
 	ctr = ctr + n_img[f];
 	
@@ -441,6 +441,10 @@ for(f = 0; f < n_fields; f++) {
 			print("Problem getting images from camera, triggering problem?");
 			throw nullPointer;
 		}
+
+		// Stop the triggger - moved to after close the datastore for error checking
+	   mmc.setSerialPortCommand("COM1","!trig 0",term); 
+		
 		//gui.getAcquisition(acq_str).promptToSave(false);
 		//ij.IJ.run("Close");
 		//gui.getAcquisition(acq_rfl).promptToSave(false);
