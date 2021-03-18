@@ -272,7 +272,7 @@ dropped.flush();
 
 new ij.gui.WaitForUserDialog("Configure the LabView program","Activate!").show();
 
-Exception e = new Exception(); // setting up exception for this scope
+Exception err_out; // setting up exception for this scope
 skip_count = 0;
 log_fieldinfo = "";
 for(index = first_run; index < n_run; index++) {
@@ -306,11 +306,14 @@ for(f = 0; f < n_fields; f++) {
 			// define here so in scope
 			chan = las_channels[w];
 			sc.message("Channel: " + chan);
-			log_fieldinfo = "Field: "+ f + ", wavelength: " + wavelengths[chan] + ", fw_pos: " + fw_pos[w];
+			
+			Date date = new Date();
+			datestr = dateFormat.format(date);
+			log_fieldinfo = datestr + "Run:" + index + ", Field: "+ f + ", wavelength: " + wavelengths[chan] + ", fw_pos: " + fw_pos[w];
 			
 			Datastore datastore;
 		
-		   Coords.Builder coordsBuilder = Coordinates.builder();
+		    Coords.Builder coordsBuilder = Coordinates.builder();
 		   
 		    // set txt files for laser params
 			writeToFile(filedir + "las.txt","" + amplitudes[w]);
@@ -372,6 +375,7 @@ for(f = 0; f < n_fields; f++) {
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
+				err_out = e;
 				continue;
 			}
 			// Clear the images which may be left
@@ -389,6 +393,7 @@ for(f = 0; f < n_fields; f++) {
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
+				err_out = e;
 				continue;
 			}
 			print("Moved");
@@ -420,9 +425,10 @@ for(f = 0; f < n_fields; f++) {
 				log.flush();
 				try {
 					checkPositionAndTriggerLog(stageName, "COM1", y_end[f], log);
-				} catch (Exception e){
+				} catch (Exception e2){
 					sc.message("Failed to check y position and trigger");
 				not_done = true;
+				err_out = e;
 				}
 			}
 			
@@ -464,7 +470,7 @@ for(f = 0; f < n_fields; f++) {
 				// print("pretending it didn't work with not_done = true");
 				// not_done = true;
 			}catch(NullPointerException nullPointer){
-				print("Problem getting images from camera, triggering problem? Retrying field");
+				print("Problem getting (any) images from camera, triggering problem? Retrying field (" + (n_try+1) + ")");
 				not_done = true;
 				// throw nullPointer;
 			}
@@ -503,11 +509,12 @@ for(f = 0; f < n_fields; f++) {
 			if(skip_count > max_field_skips){
 				error_str = "ERROR: Failed after skipping " +  max_field_skips + " fields.";
 				log.write("REACHED MAX SKIPS: " + max_field_skips + "\n" + "----------" + "\n");
+				log.write("Failed with error: " + err_out.toString());
 				log.close();
 				sc.message(error_str);
-				sc.message("CHECK LOG");
+				sc.message("Check logs for more information in " + savedir);
 				// throw e;
-				throw new MMException(error_str);
+				throw new MMException(err_out);
 			}
 		}
 	}
