@@ -136,6 +136,15 @@ Datastore createDatastore(cam_name, savedir, overwrite){
 					sc.message("Failed to delete file!");
 				}
 			}
+			File file = new File(full_dir + "MMStack_1.ome.tif");
+			if(file.isFile()){
+				if (file.delete()){ 
+					sc.message("Successfully deleted file 2");
+				} else {
+					sc.message("Failed to delete file 2!");
+				}
+			}
+			
 			// now delete dir
 			if (! dir.delete()){
 				print("Failed to delete dir");
