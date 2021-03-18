@@ -8,6 +8,8 @@ int setUpStage(trg_dist,scan_speed) {
 
 	mmc.setProperty(stageName, "SpeedX [mm/s]",scan_speed);
 	mmc.setProperty(stageName, "SpeedY [mm/s]",scan_speed);
+	
+	// throw new Exception("Random test error");
 	return 0;
 }
 
@@ -191,6 +193,9 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
 			if (Math.abs(currentYPos - y_pos) < 1.0e-1){
 				moved = true;
 			}
+			else {
+				print("Move distance error is: " + Math.abs(currentYPos - y_pos));
+			}
 		}
 		catch(Exception e) {
 			moved = false;
@@ -199,8 +204,23 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
 			Thread.sleep(100);
 		}
 		movetime = (System.currentTimeMillis() - start_movetime)/1000.0;
-		print("movetime: " + movetime);
 	} while(!moved && movetime < timeout_s);
-	if (movetime > movetimeout_s) throw e;
+	if (movetime > movetimeout_s) {
+		print("movetime: " + movetime);
+		throw e;
+	}
 	return 0;
 }
+
+int checkPositionAndTriggerLog(stageName, port, y_target, logfile){
+	ypos = mmc.getYPosition(stageName);
+	// ypos_str = String.format("%d", ypos);
+	logfile.write("// DEBUGGING AFTER HANG //\n");
+	logfile.write("y_pos: " + ypos + ", target y_pos: " + y_target + "\n");
+	mmc.setSerialPortCommand(port,"?trig","\r");
+	trigger = mmc.getSerialPortAnswer(port, "\r");
+	logfile.write("trigger: " + trigger + "\n");
+	logfile.write("//////////////////////////\n");
+	logfile.flush();
+	return 0;
+}	

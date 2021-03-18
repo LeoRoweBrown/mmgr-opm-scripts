@@ -38,7 +38,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/accelerator/20210315_exceptionHandle/" + dateFormat.format(date) + "/";
+savedir = "E:/accelerator/20210318_bakal02_erk/main/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -59,7 +59,7 @@ sc.message("Successfully cleaned up");
 
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 30; //in microns
+	dist_from_ctr = 2000; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -76,12 +76,12 @@ sc.message("Successfully cleaned up");
 	filter_naming = true;
 	max_field_skips = 5;
 	max_retries = 3;
-	movetimeout_s = 0.5*60;
+	movetimeout_s = 3*60;
 	max_dropped_frames = 1;
 
 	trg_dist = 1.4; //micron
 	// Positions are in microns, exp. in ms, speed in mm/s = microns/ms. nimg is n. of images.
-	double scan_speed = 0.2; // microns/ms
+	double scan_speed = 0.16; // microns/ms
 	
 	// in this script should be just one exposure time for the one camera, hasn't been updated
 	// exp1 = 10; //ms 
@@ -94,7 +94,7 @@ sc.message("Successfully cleaned up");
 	//las4 = 5; //las 4
 
 // Time-lapse parameters
-	n_run = 100;
+	n_run = 1;
 	run_interval = 0; // in minutes
 	first_run =0; // 0-indexing
 
@@ -108,12 +108,12 @@ sc.message("Successfully cleaned up");
 // Filter wheel positions and laser channels
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-int[] fw_pos = {5,4,3,2};
+int[] fw_pos = {1,2,4,0};
 // double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {0,1,2,3}; // DAQ channels corresponding to each fw pos
+int[] las_channels = {3,2,0,0}; // DAQ channels corresponding to each fw pos
 int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {1, 1, 1, 1};
-int[] exposures  = {2, 2, 2, 2};
+int[] amplitudes = {5, 5, 5, 1};
+int[] exposures  = {4, 4, 4, 4};
 
 if ( fw_pos.length != las_channels.length ){
 	throw new MMException("Laser channels array not same length as filter wheel positions array");
@@ -245,6 +245,7 @@ log.flush();
 
 BufferedWriter dropped = new BufferedWriter(new FileWriter(savedir + "dropped_frames.txt"));
 dropped.write("Start of log date: " + dateFormat.format(date) + "\n");
+dropped.flush();
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -271,7 +272,9 @@ dropped.write("Start of log date: " + dateFormat.format(date) + "\n");
 
 new ij.gui.WaitForUserDialog("Configure the LabView program","Activate!").show();
 
+Exception e = new Exception(); // setting up exception for this scope
 skip_count = 0;
+log_fieldinfo = "";
 for(index = first_run; index < n_run; index++) {
 	sc.message("Starting run loop");
 	
@@ -303,6 +306,7 @@ for(f = 0; f < n_fields; f++) {
 			// define here so in scope
 			chan = las_channels[w];
 			sc.message("Channel: " + chan);
+			log_fieldinfo = "Field: "+ f + ", wavelength: " + wavelengths[chan] + ", fw_pos: " + fw_pos[w];
 			
 			Datastore datastore;
 		
@@ -360,7 +364,16 @@ for(f = 0; f < n_fields; f++) {
 			cond = ctr + n_img[f] ;
 			
 			// Set-up the position-synchronised trigger
-			setUpStage(trg_dist,scan_speed);	
+			try {
+				setUpStage(trg_dist,scan_speed);
+			} catch (Exception e){
+				print("Failed to set up stage, retrying field (" + (n_try+1) + ")");
+				log.write(log_fieldinfo + ", Failed in setUpStage \n");
+				log.flush();
+				n_try++;
+				mmc.stopSequenceAcquisition(cam);
+				continue;
+			}
 			// Clear the images which may be left
 			mmc.clearCircularBuffer();
 			// Begin to move the stage
@@ -370,9 +383,12 @@ for(f = 0; f < n_fields; f++) {
 				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s);
 			}
 			catch(Exception e){
-				throw new MMException("ERROR: Stage not responding");
-				print("Problem moving stage, retrying field");
+				// throw new MMException("ERROR: Stage not responding");
+				print("Problem moving stage, retrying field (" + (n_try+1) + ")");
+				log.write(log_fieldinfo + ", Failed in setXYPositionForAcqRetry \n");
+				log.flush();
 				n_try++;
+				mmc.stopSequenceAcquisition(cam);
 				continue;
 			}
 			print("Moved");
@@ -393,14 +409,21 @@ for(f = 0; f < n_fields; f++) {
 			// print("created arrays");
 			try{
 				// log dropped frames:
-				dropped.write("Field: "+ f + ", fw_pos: " + fw_pos[w] + ", dropped frames: ");
+				dropped.write(log_fieldinfo + ", dropped frames: ");
 				dropped.flush();
 				datastore_array = acqImagesFromBuffer(datastore_array, cond_array, camName_array, coordsBuilder_array, max_dropped_frames, dropped);
 				not_done = false;
 			}
 			catch(Exception e){
-				print("Failed in acuqiring images, retrying or skipping (" + n_try+1 + ")");
+				sc.message("Failed in acquiring images, retrying or skipping (" + (n_try+1) + ")");
+				log.write(log_fieldinfo + ", Failed in acqImagesFromBuffer \n");
+				log.flush();
+				try {
+					checkPositionAndTriggerLog(stageName, "COM1", y_end[f], log);
+				} catch (Exception e){
+					sc.message("Failed to check y position and trigger");
 				not_done = true;
+				}
 			}
 			
 			datastore = datastore_array[0];
@@ -468,19 +491,22 @@ for(f = 0; f < n_fields; f++) {
 			n_try++;
 		}
 		if (n_try > 1){ 
-			log.write("Field: "+ f + ", fw_pos: " + fw_pos[w] + ", retries: " + n_try + "\n");
+			log.write(log_fieldinfo + ", tries: " + n_try + "\n" + "----------" + "\n");
 			log.flush();
 		}
-		if (n_try == max_retries){
-			sc.message("WARNING: Failed after " +  max_retries + " retries. Skipping");
+		if (n_try == max_retries && not_done){
+			sc.message("WARNING: Failed after " +  max_retries + " tries. Skipping");
 			// print("Failed after " +  max_retries + "retries. Skipping");
 			skip_count++;
-			log.write("Field: "+ f + ", fw_pos: " + fw_pos[w] + ", SKIPPED\n");
+			log.write("***SKIPPED***\n");
 			log.flush();
 			if(skip_count > max_field_skips){
 				error_str = "ERROR: Failed after skipping " +  max_field_skips + " fields.";
-				log.write("REACHED MAX SKIPS: " + max_field_skips + "\n");
+				log.write("REACHED MAX SKIPS: " + max_field_skips + "\n" + "----------" + "\n");
 				log.close();
+				sc.message(error_str);
+				sc.message("CHECK LOG");
+				// throw e;
 				throw new MMException(error_str);
 			}
 		}
