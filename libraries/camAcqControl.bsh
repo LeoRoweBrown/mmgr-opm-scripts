@@ -127,27 +127,22 @@ Datastore createDatastore(cam_name, savedir, overwrite){
 				throw new IOException("File already exists, use overwrite=true "+
 				"when calling createDatastore if you want to overwrite");
 			}
-			sc.message("Overwriting stack in " + full_dir);
-			File file = new File(full_dir + "MMStack.ome.tif");
-			if(file.isFile()){
-				if (file.delete()){ 
-					sc.message("Successfully deleted");
-				} else {
-					sc.message("Failed to delete file!");
-				}
-			}
-			File file = new File(full_dir + "MMStack_1.ome.tif");
-			if(file.isFile()){
-				if (file.delete()){ 
-					sc.message("Successfully deleted file 2");
-				} else {
-					sc.message("Failed to delete file 2!");
-				}
-			}
+			sc.message("Overwriting stacks in " + full_dir);
+			file_names = new File(full_dir).list();
 			
+			for(i=0; i<file_names.length; i++){ 
+				File file = new File(full_dir + file_names[i]);
+				if(file.isFile()){
+					if (file.delete()){
+						sc.message("Successfully deleted " + file_names[i]);
+					} else {
+						sc.message("Failed to delete file " + file_names[i]);
+					}
+				}
+			}
 			// now delete dir
 			if (! dir.delete()){
-				print("Failed to delete dir");
+				print("Failed to delete directory, check if all files were deleted first");
 			}
 		}
 		sc.message("Creating TIFF stack in " + full_dir);
