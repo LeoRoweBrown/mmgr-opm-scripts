@@ -371,7 +371,7 @@ for(f = 0; f < n_fields; f++) {
 				setUpStage(trg_dist,scan_speed);
 			} catch (Exception e){
 				print("Failed to set up stage, retrying field (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in setUpStage \n");
+				log.write(log_fieldinfo + ", Failed in setUpStage: " + e.toString() + "\n");
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
@@ -389,7 +389,7 @@ for(f = 0; f < n_fields; f++) {
 			catch(Exception e){
 				// throw new MMException("ERROR: Stage not responding");
 				print("Problem moving stage, retrying field (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in setXYPositionForAcqRetry \n");
+				log.write(log_fieldinfo + ", Failed in setXYPositionForAcqRetry: " + e.toString() + "\n");
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
@@ -421,7 +421,7 @@ for(f = 0; f < n_fields; f++) {
 			}
 			catch(Exception e){
 				sc.message("Failed in acquiring images, retrying or skipping (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in acqImagesFromBuffer \n");
+				log.write(log_fieldinfo + ", Failed in acqImagesFromBuffer: " + e.toString() + "\n");
 				log.flush();
 				try {
 					checkPositionAndTriggerLog(stageName, "COM1", y_end[f], log);
