@@ -45,7 +45,7 @@ int waitForZ() {
 }
 
 int waitForZnew() {
-	print("hereZ");
+	// print("hereZ");
 	mmc.setSerialPortCommand("COM4","!statusaxis","\r"); 
 	status = mmc.getSerialPortAnswer("COM4","\r"); 
 	while(status.charAt(0) == 'M' || status.charAt(1) == 'M') {
@@ -55,6 +55,25 @@ int waitForZnew() {
 	}	
 	return 0;
 }
+
+int fastMoveZ(stageName, aim_z_pos, travel_speed){
+}
+
+int waitForStageZ(stageName, aim_z_pos, travel_speed, fudge) {
+	// fudge is an overhead time in ms supplied by user
+	cur_z_pos = mmc.getPosition(stageName);
+	z_dist = Math.abs(cur_z_pos - aim_z_pos);
+	z_t = z_dist / travel_speed;
+	d_t = (int) Math.ceil(z_t);
+	d_t += fudge;
+	Thread.sleep(d_t);
+	return d_t;
+}
+
+int waitForStageZ(stageName, aim_z_pos, travel_speed){
+	waitForStageZ(stageName, aim_z_pos, travel_speed, 0);
+}
+	
 
 int waitForXY() {
 	mmc.setSerialPortCommand("COM1","!statusaxis","\r"); 
@@ -189,13 +208,7 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
 				Thread.sleep(100);
 			}
 			mmc.setXYPosition(stageName, x_pos, y_pos);
-			double currentYPos = mmc.getYPosition(stageName);
-			if (Math.abs(currentYPos - y_pos) < 1.0e-1){
-				moved = true;
-			}
-			else {
-				print("Move distance error is: " + Math.abs(currentYPos - y_pos));
-			}
+			moved = true;
 		}
 		catch(Exception e) {
 			moved = false;
@@ -212,15 +225,15 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
 	return 0;
 }
 
-int checkPositionAndTriggerLog(stageName, port, y_target, logfile){
+int checkPositionAndTriggerLog(stageName, port, y_start, y_target, logfile){
 	ypos = mmc.getYPosition(stageName);
 	// ypos_str = String.format("%d", ypos);
-	logfile.write("// DEBUGGING AFTER HANG //\n");
-	logfile.write("y_pos: " + ypos + ", target y_pos: " + y_target + "\n");
+	logfile.write("// DEBUGGING AFTER HANG ///////////////\n");
+	logfile.write("// y_start: " + y_start + "y_pos: " + ypos + ", target y_pos: " + y_target + "\n");
 	mmc.setSerialPortCommand(port,"?trig","\r");
 	trigger = mmc.getSerialPortAnswer(port, "\r");
-	logfile.write("trigger: " + trigger + "\n");
-	logfile.write("//////////////////////////\n");
+	logfile.write("// trigger: " + trigger + "\n");
+	logfile.write("///////////////////////////////////////\n");
 	logfile.flush();
 	return 0;
 }	

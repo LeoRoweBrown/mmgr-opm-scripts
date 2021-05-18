@@ -1,0 +1,3 @@
+try {
+	source('nina_timelapse_4colour.bsh');
+	

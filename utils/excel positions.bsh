@@ -1,6 +1,7 @@
 import jxl.*;
 import jxl.write.*;
-//import jxl.Workbook.*;
+import jxl.Workbook;
+import jxl.Workbook.*;
 import java.util.Date;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -20,21 +21,23 @@ import ij.measure.ResultsTable;
 import ij.plugins.*;
 import ij.gui.*;
 import org.apache.poi;
+import org.micromanager.internal.utils.MMException;
 
 ////////////////////
 // Parameters
 // Experiment 
 // platemap = "E:\\CRUK\\20200820_CRUK33_fixedDrugs_reimage\\platemap.xls";
-platemap = "E:\\accelerator\\20210315_bakal01_erk\\platemap.xls";
+platemap = "E:\\accelerator\\20210510_bakal04_Mar\\230421\\platemap.xls";
 
 gen_z = false;
-fields_per_well = 3;// 180301 Hugh changed from 2
-field_x_dist = 1000; //microns
+uni_z = true;
+fields_per_well = 1;// 180301 Hugh changed from 2
+field_x_dist = 200; //microns
 
 // Plate format description
-n_rows = 8;
-n_cols = 12;
-inter_well_dist = 9000;
+n_rows = 16 / 2;
+n_cols = 24 / 2;
+inter_well_dist = 4500 * 2;
 id_offset = 2000;
 
 ////////////////////////////////////////// PART 1 - determines a plane using the 3 point method
@@ -153,6 +156,9 @@ for (j = 0; j < n_rows; j++)
 				Yp = Yc;
 				x_pos.add(Xp);
 				y_pos.add(Yp);
+				if (uni_z){
+					z_pos.add((int)mpa.getZ());
+				}
 				if (gen_z) 
 				{
 					Zp = Math.round(-ABxAC[0]*Xp/ABxAC[2]-ABxAC[1]*Yp/ABxAC[2]-D/ABxAC[2]);
@@ -210,7 +216,7 @@ MultiStagePosition msp;
 
 for (i = 0; i<x_pos.length; i++) {
 	
-	if(gen_z) {
+	if(gen_z ||  uni_z) {
 		msp = new MultiStagePosition(xyStage, x_pos[i], y_pos[i], zStage, z_pos[i]);
 	} else {
 		msp = new MultiStagePosition();
@@ -227,6 +233,14 @@ for (i = 0; i<x_pos.length; i++) {
 	yp=(y_pos[i]-y_orig);
    x_id = (int) Math.floor((-(xp ) + id_offset) / inter_well_dist) + 2; // add +2 since _orig is in column 2 (0-index)
 	y_id = (int) Math.floor((-(yp ) + id_offset) /inter_well_dist) + 1; // add +1 since _orig is in row B
+	// print(y_id);
+	// print(x_id);
+	if (y_id >= n_rows ){
+		throw new ArrayIndexOutOfBoundsException("Number of rows doesn't agree with platemap");
+	}
+	if (x_id >= n_cols ){
+		throw new ArrayIndexOutOfBoundsException("Number of columns doesn't agree with platemap");
+	}
 	label = "Row " + alphabet[y_id] + " Column " + x_id + " Field " + label_idx[x_id][y_id]; 
 	label_idx[x_id][y_id] = label_idx[x_id][y_id] + 1;
 	msp.setLabel(label);
