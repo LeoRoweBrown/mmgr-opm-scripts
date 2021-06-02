@@ -1,7 +1,11 @@
 import org.micromanager.data.Datastore;
 //import org.apache.commons.io.FileUtils
 
-Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_dropped, logfile){
+Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_dropped, logbuffer){
+	// datastores is array of the initialised datastores, conds is max frames numbers, camNames is
+	// camera names in MM, coordsBuilder object array (see MM docs), max_dropped is max allowed 
+	// dropped frames before raising error, logbuffer is a StringBuffer that contains log messages
+	
 	// only works for acquire after each field, moved from the main script 
 	// print("updated tictoc");
 	TicToc=1000;
@@ -71,17 +75,11 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_
 	}
 	// Idea is that it waits until all expected images are obtained, but if it times out
 	// it allows a max total number of dropped frames (max_dropped)
-	if (logfile != null){
-		logfile.write("" + total_images_missing);
-		//logfile.flush();
-	}
+	logbuffer.append("dropped: " + total_images_missing);
 	if (HangExit == 1){
 		if (total_images_missing > max_dropped){
 			print("Acquisition hanged and exceeded max dropped frames (" + max_dropped + ")");
-			if (logfile != null){
-				logfile.write(" (ERROR) max: " + max_dropped + "\n");
-				logfile.flush();
-			}
+			logbuffer.append(" (ERROR) max: " + max_dropped + "\n");
 			throw new MMException("Acqusition hanged: no images found in buffer in time");
 			// return datastores;
 		}
@@ -91,19 +89,15 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_
 	}
 	else {
 		sc.message("Acquired with no dropped frames");
-	}
-	if (logfile != null){
-		logfile.write("\n");
-		logfile.flush();
-	}
-	// how do we communicate the number of dropped frames? datastore doesn't have "length"
+	} // since error is raised in HangExit == 1 need to end line
+	logbuffer.append("\n");
 
-	return datastores;
+	return datastores;  // not needed? the datastores array is mutated // remove later and test
 }
 
 Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_dropped){
-	BufferedWriter logfile;
-	acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_dropped, logfile);
+	BufferedWriter logfile_dummy;  // created and lost in this scope
+	acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_dropped, logfile_dummy);
 }
 
 Datastore createDatastore(cam_name, savedir, overwrite){
@@ -163,35 +157,6 @@ Datastore createDatastore(cam_name, savedir){
 	createDatastore(cam_name, savedir, false);
 }
 
-int deleteDatastore(datastore_dir){
-	File dir = new File(datastore_dir);
-	if (dir.isDirectory()){
-		sc.message("Overwriting stacks in " + datastore_dir);
-		file_names = new File(datastore_dir).list();
-		
-		for(i=0; i<file_names.length; i++){ 
-			File file = new File(datastore_dir + "/" + file_names[i]);
-			if(file.isFile()){
-				if (file.delete()){
-					sc.message("Successfully deleted " + file_names[i]);
-				} else {
-					sc.message("Failed to delete file " + file_names[i]);
-					return 1;
-				}
-			}
-		}
-		// now delete dir
-		if (! dir.delete()){
-			print("Failed to delete directory, check if all files were deleted first");
-			return 2;
-		}
-	}
-	else {
-		sc.message("No such datastore directory");
-		return 3;
-	}
-	return 0;
-}
 
 int closeAndSaveAcq(acq_rfl,cam_rfl,reflect_dir,acq_str,cam_str,straight_dir,run,field,acq_type) {	
 	

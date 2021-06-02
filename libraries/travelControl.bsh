@@ -13,35 +13,9 @@ int setUpStage(trg_dist,scan_speed) {
 	return 0;
 }
 
-int setUpFocus() {
-	// max pos speed 256
-	// max accel 500
-	// micro-step 4
-/*		mmc.setSerialPortCommand("COM4", "A SAP 140, 0, 4","\r") ;
-		String ret = mmc.getSerialPortAnswer("COM4", "\r");
-		mmc.setSerialPortCommand("COM4", "A SAP 4, 0, 256","\r") ;
-		ret = mmc.getSerialPortAnswer("COM4", "\r");
-		mmc.setSerialPortCommand("COM4", "A SAP 5, 0, 500","\r") ;
-		ret = mmc.getSerialPortAnswer("COM4", "\r");
-		// Set up the encoder pre-scaler so that MVP is given the right value
-		mmc.setSerialPortCommand("COM4", "A SAP 210, 0, 1600","\r") ;
-		ret = mmc.getSerialPortAnswer("COM4", "\r");	
-		mmc.setSerialPortCommand("COM4", "A SAP 1, 0, 0","\r") ;
-		ret = mmc.getSerialPortAnswer("COM4", "\r");	*/
-// Everything should have been set up in the device adapter
+int setUpFocus() {  // remove?
 	print("Check focus was set up");
 		return 0;
-}
-
-int waitForZ() {
-	mmc.setSerialPortCommand("COM4", "A GAP 8, 0","\r") ;
-	String foc_stat = mmc.getSerialPortAnswer("COM4", "\r");
-	while( foc_stat.charAt(7) == '0') {
-		mmc.setSerialPortCommand("COM4", "A GAP 8, 0","\r") ;
-		foc_stat = mmc.getSerialPortAnswer("COM4", "\r");
-		Thread.sleep(100);  // 10 Hz polling rate
-	}
-	return 0;
 }
 
 int waitForZnew() {
@@ -225,15 +199,64 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
 	return 0;
 }
 
-int checkPositionAndTriggerLog(stageName, port, y_start, y_target, logfile){
-	ypos = mmc.getYPosition(stageName);
-	// ypos_str = String.format("%d", ypos);
-	logfile.write("// DEBUGGING AFTER HANG ///////////////\n");
-	logfile.write("// y_start: " + y_start + "y_pos: " + ypos + ", target y_pos: " + y_target + "\n");
+String checkXY(stageName, x_target, y_target, logbuffer){
+	
+	rtnMsg = "";
+	int errors[] = {0, 0}; // unused, remove at some point probably
+	
+	ypos = mmc.getYPosition(stageName);  // y position reported by stage
+	xpos = mmc.getYPosition(stageName);  // x position reported by stage
+	move_err_y = Math.abs(y_target - ypos);
+	move_err_x = Math.abs(x_target - xpos);
+	
+	if (move_err_x > 0.1){
+		errors[0] = 1;
+		rtnMsg += "ERROR: X incorrect: (" + xpos + " not " + x_target + "). ";
+	}
+	if (move_err_y > 0.1){
+		errors[1] = 1;
+		rtnMsg += "ERROR: Y incorrect: (" + ypos + " not " + y_target + "). ";
+	}
+	logbuffer.append("xpos: " + xpos + " (" + x_target + ") " + "ypos: " + ypos + " (" + y_target + "), ");
+	
+	return rtnMsg;
+}
+
+
+String checkStageErrors(stageName, port, trig_dist, scan_speed, logbuffer){
+	int errors[] = {0, 0, 0};
+	rtnMsg = "";
+
+	// 1: check if triggering
 	mmc.setSerialPortCommand(port,"?trig","\r");
 	trigger = mmc.getSerialPortAnswer(port, "\r");
-	logfile.write("// trigger: " + trigger + "\n");
-	logfile.write("///////////////////////////////////////\n");
-	logfile.flush();
-	return 0;
+	logbuffer.append("trigger: " + trigger + "\n");
+	if ( trigger.equals("1") ){
+		errors[0] = 1;
+		rtnMsg += "ERROR: Triggering is not on. ";
+	}
+	logbuffer.append("trigger: " + trigger + " ");
+	
+	// 2: check trigger distance
+	mmc.setSerialPortCommand(port,"?trgd","\r");
+	trigger_dist_serial = mmc.getSerialPortAnswer(port, "\r");
+	logbuffer.append("trigger distance: " + trigger_dist_serial + "\n");
+	trigger_dist_dub = Double.parseDouble(trigger_dist_serial);
+	if ( Math.abs(trigger_dist_dub - trig_dist) > 1e-4 ){
+		errors[1] = 1;
+		rtnMsg += "ERROR: Trigger distance incorrect (" + trigger_dist_serial + " not " + trig_dist + "). ");
+	}
+	logbuffer.append("trigger distance: " + trigger_dist_serial + " (" + trig_dist + ") ");
+	
+	// 3: check scan speed
+	mmc.setSerialPortCommand(port,"?speed y","\r");
+	scan_speed_serial = mmc.getSerialPortAnswer(port, "\r");
+	logbuffer.append("scan speed: " + scan_speed_serial + " (" + scan_speed + ")" + "\n");
+	scan_speed_serial_dub = Double.parseDouble(scan_speed_serial);
+	if ( Math.abs(scan_speed_serial_dub - scan_speed) > 1e-4 ){
+		errors[2] = 1;
+		rtnMsg += "ERROR: Scan speed incorrect (" + scan_speed_serial + " not " + scan_speed + "). ");
+	}
+	
+	return rtnMsg;
 }	

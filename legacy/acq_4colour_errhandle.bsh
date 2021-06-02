@@ -14,7 +14,6 @@ import mmcorej.TaggedImage;
 import org.micromanager.data.Image;
 import org.micromanager.data.Coords;
 import org.micromanager.data.Coordinates;
-import org.micromanager.internal.utils.MMException;
 
 source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
 
@@ -39,7 +38,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/accelerator/20210510_bakal04_Mar/310321/main_oneRowPerCondition/" + dateFormat.format(date) + "/";
+savedir = "E:/marz_stressTest/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -60,7 +59,7 @@ sc.message("Successfully cleaned up");
 
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 300; //in microns
+	dist_from_ctr = 2000; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -75,16 +74,14 @@ sc.message("Successfully cleaned up");
 		// 2 = Simultaneous
 
 	filter_naming = true;
-	max_field_skips = 6;
-	max_retries = 4;
+	max_field_skips = 5;
+	max_retries = 3;
 	movetimeout_s = 4*60;
 	max_dropped_frames = 1;
 
 	trg_dist = 1.4; //micron
 	// Positions are in microns, exp. in ms, speed in mm/s = microns/ms. nimg is n. of images.
-	// double scan_speed = 0.025; // microns/ms
-	// double scan_speed = 0.01; 
-	double scan_speed = 0.1; 
+	double scan_speed = 0.16; // microns/ms
 	
 	// in this script should be just one exposure time for the one camera, hasn't been updated
 	// exp1 = 10; //ms 
@@ -98,7 +95,7 @@ sc.message("Successfully cleaned up");
 
 // Time-lapse parameters
 	n_run = 1;
-	run_interval = 60*8; // in minutes
+	run_interval = 0; // in minutes
 	first_run =0; // 0-indexing
 
 // Saving parameters
@@ -111,21 +108,12 @@ sc.message("Successfully cleaned up");
 // Filter wheel positions and laser channels
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-int[] fw_pos = {1,2,4};
+int[] fw_pos = {1,2,4,0};
 // double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {3,2,0}; // DAQ channels corresponding to each fw pos
+int[] las_channels = {3,2,0,0}; // DAQ channels corresponding to each fw pos
 int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {5, 5, 5};
-int[] exposures  = {8, 8, 8};
-
-
-// donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-//int[] fw_pos = {};
-// double fw_angle = 60.0; // angle between filter wheel positions
-//int[] las_channels = {0}; // DAQ channels corresponding to each fw pos
-//int[] wavelengths = {457};
-//int[] amplitudes = {5};
-//int[] exposures  = {2};
+int[] amplitudes = {5, 5, 5, 1};
+int[] exposures  = {4, 4, 4, 4};
 
 if ( fw_pos.length != las_channels.length ){
 	throw new MMException("Laser channels array not same length as filter wheel positions array");
@@ -152,8 +140,7 @@ writeToFile(filedir + "acqType.txt","" + acq_type);
 writeToFile(filedir + "las.txt","" + amplitudes[0]);
 writeToFile(filedir + "exp.txt","" + exposures[0]);
 // writeToFile(filedir + "exp2.txt","" + 0);
-// writeToFile(filedir + "delay.txt","" + (trg_dist / (2.*scan_speed)));
-writeToFile(filedir + "delay.txt","" + 0);
+writeToFile(filedir + "delay.txt","" + (trg_dist / (2.*scan_speed)));
 writeToFile(filedir + "run.txt","0");
 writeToFile(filedir + "fw_pos.txt", "0");
 writeToFile(filedir + "las_channel.txt", "");
@@ -256,9 +243,9 @@ BufferedWriter log = new BufferedWriter(new FileWriter(savedir + "log.txt"));
 log.write("Start of log date: " + dateFormat.format(date) + "\n");
 log.flush();
 
-BufferedWriter dropped = new BufferedWriter(new FileWriter(savedir + "dropped_frames.txt"));
-dropped.write("Start of log date: " + dateFormat.format(date) + "\n");
-dropped.flush();
+BufferedWriter debug = new BufferedWriter(new FileWriter(savedir + "dropped_frames.txt"));
+debug.write("Start of log date: " + dateFormat.format(date) + "\n");
+debug.flush();
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -287,7 +274,7 @@ new ij.gui.WaitForUserDialog("Configure the LabView program","Activate!").show()
 
 Exception err_out; // setting up exception for this scope
 skip_count = 0;
-log_fieldinfo = ""; 
+log_fieldinfo = "";
 for(index = first_run; index < n_run; index++) {
 	sc.message("Starting run loop");
 	
@@ -306,7 +293,7 @@ for(index = first_run; index < n_run; index++) {
 		throw(new NotImplementedException("Not supporting save after run in MM2 yet"));
 		// initAcq(n_reflect_img,cam_rfl,n_straight_img,cam_str,ctrs);
 	}
-	skip_count = 0;  // reset each run
+		
 	last_five_occur = System.currentTimeMillis();
 
 // loop for fields
@@ -322,17 +309,22 @@ for(f = 0; f < n_fields; f++) {
 			
 			Date date = new Date();
 			datestr = dateFormat.format(date);
-			log_fieldinfo = datestr + " Run:" + index + ", Field: "+ f + ", wavelength: " + wavelengths[chan] + ", fw_pos: " + fw_pos[w];
+			log_fieldinfo = datestr + "Run:" + index + ", Field: "+ f + ", Channel: " + wavelengths[chan] + ", fw_pos: " + fw_pos[w] + ", ";
+			
+			// error messages that are combined at the end for debugging
+			dropped_buffer = new StringBuffer();
+			move_error_buffer = new StringBuffer();
+			setup_stage_buffer = new StringBuffer();
+			stage_settings_buffer = new StringBuffer();
 			
 			Datastore datastore;
 		
-		   Coords.Builder coordsBuilder = Coordinates.builder();
+		    Coords.Builder coordsBuilder = Coordinates.builder();
 		   
 		    // set txt files for laser params
 			writeToFile(filedir + "las.txt","" + amplitudes[w]);
 			writeToFile(filedir + "exp.txt","" + exposures[w]);
 			writeToFile(filedir + "fw_pos.txt", "" + fw_pos[w]);
-			mmc.setState("FW103H Filter Wheel", fw_pos[w]);
 			writeToFile(filedir + "las_channel.txt", "" + las_channels[w]);
 			mmc.setExposure(exposures[w]);
 			sc.message("Filter position: " + fw_pos[w]);
@@ -340,7 +332,7 @@ for(f = 0; f < n_fields; f++) {
 			// move back to start position for each channel
 			travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s);
 			// travelToPosition(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName);
-			String end_dir;  // scope
+			
 			if (save_type == 1) {
 		
 				// LRB - FRET removed, single cam acq only
@@ -358,7 +350,8 @@ for(f = 0; f < n_fields; f++) {
 				mmc.setProperty(cam, "Triggermode","External");	
 				sc.message("Creating datastore");
 				
-				datastore = createDatastore(acq, savedir + end_dir, true);
+				// comment this out for marz test - don't save file to save space
+				// datastore = createDatastore(acq, savedir + end_dir, true);
 			
 				mmc.setProperty(cam, "Triggermode","External");
 				
@@ -385,7 +378,7 @@ for(f = 0; f < n_fields; f++) {
 				setUpStage(trg_dist,scan_speed);
 			} catch (Exception e){
 				print("Failed to set up stage, retrying field (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in setUpStage: " + e.toString() + "\n");
+				log.write(log_fieldinfo + "Failed in setUpStage: " + e.toString() + "\n");
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
@@ -397,13 +390,17 @@ for(f = 0; f < n_fields; f++) {
 			// Begin to move the stage
 			sc.message("moving to x=" + x_pos[f] + " y= " + y_end[f]);
 			
+			// debugging
+			checkXY(stageName, x_target, y_target, move_error_buffer)
+			
+			
 			try{
-				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s);
+				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s, move_error_buffer);
 			}
 			catch(Exception e){
 				// throw new MMException("ERROR: Stage not responding");
 				print("Problem moving stage, retrying field (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in setXYPositionForAcqRetry: " + e.toString() + "\n");
+				log.write(log_fieldinfo + "Failed in setXYPositionForAcqRetry: " + e.toString() + "\n");
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
@@ -428,21 +425,19 @@ for(f = 0; f < n_fields; f++) {
 			// print("created arrays");
 			try{
 				// log dropped frames:
-				dropped.write(log_fieldinfo + ", dropped frames: ");
-				dropped.flush();
-				datastore_array = acqImagesFromBuffer(datastore_array, cond_array, camName_array, coordsBuilder_array, max_dropped_frames, dropped);
+				datastore_array = acqImagesFromBuffer(datastore_array, cond_array, camName_array, coordsBuilder_array, max_dropped_frames, dropped_buffer);
 				not_done = false;
 			}
 			catch(Exception e){
 				sc.message("Failed in acquiring images, retrying or skipping (" + (n_try+1) + ")");
 				log.write(log_fieldinfo + ", Failed in acqImagesFromBuffer: " + e.toString() + "\n");
 				log.flush();
-				err_out = e;
 				try {
-					checkPositionAndTriggerLog(stageName, "COM1", y_bg[f], y_end[f], log);
+					checkPositionAndTriggerLog(stageName, "COM1", y_end[f], log);
 				} catch (Exception e2){
 					sc.message("Failed to check y position and trigger");
 				not_done = true;
+				err_out = e;
 				}
 			}
 			
@@ -481,11 +476,6 @@ for(f = 0; f < n_fields; f++) {
 			try {
 				datastore.freeze();
 				datastore.close();
-				/*print("deleting in " + savedir + end_dir + "/" + acq);
-				errdel = deleteDatastore(savedir + end_dir + "/" + acq);
-				if (errdel != 0){
-					sc.message("FAILED TO DELETE DATASTORE WITH ERROR " + errdel);
-				}*/
 				// print("pretending it didn't work with not_done = true");
 				// not_done = true;
 			}catch(NullPointerException nullPointer){
@@ -533,7 +523,7 @@ for(f = 0; f < n_fields; f++) {
 				sc.message(error_str);
 				sc.message("Check logs for more information in " + savedir);
 				// throw e;
-				throw err_out;
+				throw new MMException(err_out);
 			}
 		}
 	}
