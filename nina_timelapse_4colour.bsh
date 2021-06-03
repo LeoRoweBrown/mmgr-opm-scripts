@@ -39,7 +39,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/accelerator/20210510_bakal04_Mar/310321/main_oneRowPerCondition/" + dateFormat.format(date) + "/";
+savedir = "E:/accelerator/20210520_edwinLiveCells/main03/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -78,7 +78,7 @@ sc.message("Successfully cleaned up");
 	max_field_skips = 6;
 	max_retries = 4;
 	movetimeout_s = 4*60;
-	max_dropped_frames = 1;
+	max_dropped_frames = 0;
 
 	trg_dist = 1.4; //micron
 	// Positions are in microns, exp. in ms, speed in mm/s = microns/ms. nimg is n. of images.
@@ -98,7 +98,7 @@ sc.message("Successfully cleaned up");
 
 // Time-lapse parameters
 	n_run = 1;
-	run_interval = 60*8; // in minutes
+	run_interval = 0;//60*8; // in minutes
 	first_run =0; // 0-indexing
 
 // Saving parameters
@@ -111,12 +111,12 @@ sc.message("Successfully cleaned up");
 // Filter wheel positions and laser channels
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-int[] fw_pos = {1,2,4};
+int[] fw_pos = {1,5};
 // double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {3,2,0}; // DAQ channels corresponding to each fw pos
-int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {5, 5, 5};
-int[] exposures  = {8, 8, 8};
+int[] las_channels = {3,0}; // DAQ channels corresponding to each fw pos
+int[] wavelengths = {457, 515, 561, 642};
+int[] amplitudes = {1,5};
+int[] exposures  = {2, 8};
 
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
