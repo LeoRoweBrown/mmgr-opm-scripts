@@ -39,7 +39,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/accelerator/20210510_bakal04_Mar/310321/main_oneRowPerCondition/" + dateFormat.format(date) + "/";
+savedir = "E:/logging_test/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -60,7 +60,7 @@ sc.message("Successfully cleaned up");
 
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 300; //in microns
+	dist_from_ctr = 300; //in microns (HALF) SCAN DISTANCE IN Y
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -75,8 +75,8 @@ sc.message("Successfully cleaned up");
 		// 2 = Simultaneous
 
 	filter_naming = true;
-	max_field_skips = 6;
-	max_retries = 4;
+	max_field_skips = 3;
+	max_retries = 3;
 	movetimeout_s = 4*60;
 	max_dropped_frames = 1;
 
@@ -84,7 +84,8 @@ sc.message("Successfully cleaned up");
 	// Positions are in microns, exp. in ms, speed in mm/s = microns/ms. nimg is n. of images.
 	// double scan_speed = 0.025; // microns/ms
 	// double scan_speed = 0.01; 
-	double scan_speed = 0.1; 
+	double scan_speed = 0.04; 
+	double predicted_scan_time = (dist_from_ctr*2.0/scan_speed)*1.5; // in ms, 1.5 factor for overhead
 	
 	// in this script should be just one exposure time for the one camera, hasn't been updated
 	// exp1 = 10; //ms 
@@ -97,9 +98,10 @@ sc.message("Successfully cleaned up");
 	//las4 = 5; //las 4
 
 // Time-lapse parameters
-	n_run = 1;
+	n_run = 50;
 	run_interval = 60*8; // in minutes
-	first_run =0; // 0-indexing
+	run_interval = 5; // in minutes
+	first_run = 0; // 0-indexing
 
 // Saving parameters
 	save_type = 1;
@@ -115,7 +117,7 @@ int[] fw_pos = {1,2,4};
 // double fw_angle = 60.0; // angle between filter wheel positions
 int[] las_channels = {3,2,0}; // DAQ channels corresponding to each fw pos
 int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {5, 5, 5};
+int[] amplitudes = {0, 0, 0};
 int[] exposures  = {8, 8, 8};
 
 
@@ -289,6 +291,7 @@ Exception err_out; // setting up exception for this scope
 skip_count = 0;
 log_fieldinfo = ""; 
 for(index = first_run; index < n_run; index++) {
+	print("Run " + index + " of " + n_run);
 	sc.message("Starting run loop");
 	
 	time_begin = System.currentTimeMillis();
@@ -322,11 +325,13 @@ for(f = 0; f < n_fields; f++) {
 			
 			Date date = new Date();
 			datestr = dateFormat.format(date);
-			log_fieldinfo = datestr + "Run:" + index + ", Field: "+ f + ", Channel: " + wavelengths[chan] + ", fw_pos: " + fw_pos[w] + ", ";
+			log_fieldinfo = datestr + " Run:" + index + ", Field: "+ f + ", Channel: " + wavelengths[chan] + ", fw_pos: " + fw_pos[w] + ", ";
 			
 			// combined at end into the debug error log
-			move_error_buffer = new StringBuffer();
-			setup_stage_buffer = new StringBuffer();
+			move_error_buffer_start = new StringBuffer();
+			move_error_buffer_end = new StringBuffer();
+			stage_error_buffer = new StringBuffer();
+			dropped_buffer = new StringBuffer();
 			
 			Datastore datastore;
 		
@@ -388,7 +393,7 @@ for(f = 0; f < n_fields; f++) {
 				setUpStage(trg_dist,scan_speed);
 			} catch (Exception e){
 				print("Failed to set up stage, retrying field (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in setUpStage: " + e.toString() + "\n");
+				log.write(log_fieldinfo + "Failed in setUpStage: " + e.toString() + "\n");
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
@@ -399,38 +404,30 @@ for(f = 0; f < n_fields; f++) {
 			mmc.clearCircularBuffer();
 			// Begin to move the stage
 			sc.message("moving to x=" + x_pos[f] + " y= " + y_end[f]);
+
+			move_error_buffer_start.append("Start pos: ");
+			errMsg = checkXY(stageName, x_pos[f], y_bg[f], move_error_buffer_start); // check start is correct (debugging)
+			
+			if (!errMsg.equals("")){
+				log.write(log_fieldinfo + "Start position error: " + errMsg + "\n");
+				log.flush();
+				throw new MMException("START POSITION ERROR");
+			}
 			
 			try{
-				move_error_buffer.append("Start pos: ");
-				errMsg = checkXY(stageName, x_pos[f], y_bg[f], move_error_buffer); // check start is correct (debugging)
-				
-				if (!errMsg.equals("")){
-					log.write(log_fieldinfo + "Start position error: " + errMsg + "\n");
-					log.flush();
-				}
-				
-				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s); // start the move
-				
-				move_error_buffer.append("End pos: ");
-				errMsg = checkXY(stageName, x_pos[f], y_end[f], move_error_buffer); // check end is correct (debugging)
-				if (!errMsg.equals("")){
-					log.write(log_fieldinfo + "End position error: " + errMsg + "\n");
-					log.flush();
-				}
-				// now get check stage settings were correct
-				errMsg = checkStageErrors(stageName, "COM1", trig_dist, scan_speed, logbuffer);
-				
+				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s); // start the move	
 			}
 			catch(Exception e){
 				// throw new MMException("ERROR: Stage not responding");
 				print("Problem moving stage, retrying field (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in setXYPositionForAcqRetry: " + e.toString() + "\n");
+				log.write(log_fieldinfo + "Failed in setXYPositionForAcqRetry: " + e.toString() + "\n");
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
 				err_out = e;
 				continue;
 			}
+			
 			print("Moved");
 			//mmc.setXYPosition(stageName, x_pos[f], y_end[f]);	//pos[f].fin_x, pos[f].fin_y);
 			timeBeginImaging = System.currentTimeMillis();
@@ -454,11 +451,23 @@ for(f = 0; f < n_fields; f++) {
 			}
 			catch(Exception e){
 				sc.message("Failed in acquiring images, retrying or skipping (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in acqImagesFromBuffer: " + e.toString() + "\n");
+				log.write(log_fieldinfo + "Failed in acqImagesFromBuffer: " + e.toString() + "\n");
 				log.flush();
 				err_out = e;
 				not_done = true; // this was inside a catch, maybe this was causing problems?
 			}
+
+			// check that moved (in time)
+			move_error_buffer_end.append("End pos: ");
+			errMsg = checkXYWait(stageName, x_pos[f], y_end[f], move_error_buffer_end, 10000); // check end is correct (debugging)
+			if (!errMsg.equals("")){
+				log.write(log_fieldinfo + "End position error: " + errMsg + "\n");
+				log.flush();
+				throw new MMException("END POSITION ERROR");
+			}
+			// now get check stage settings were correct
+			timed_out = false;
+			errMsg = checkStageErrors(stageName, "COM1", trg_dist, scan_speed, stage_error_buffer);
 			
 			datastore = datastore_array[0]; // we only have one camera
 			
@@ -466,10 +475,12 @@ for(f = 0; f < n_fields; f++) {
 			delta_t = timeEndImaging - timeBeginImaging; // seconds
 			sc.message("Time spent imaging " + delta_t + "ms");	
 			
-			// combine the debugging and save to the debug log
-			debug.write(log_fieldinfo + move_error_buffer.toString() + dropped_buffer.toString());
+			// combine the debugging and save to the debug log ////////////////
+			debug_str = log_fieldinfo + "start: " + move_error_buffer_start.toString() + "end: " + 
+				move_error_buffer_end.toString() + stage_error_buffer.toString() + dropped_buffer.toString();
+			debug.write(debug_str);
 			debug.flush();
-			
+			//////////////////////
 			// sc.message("test " + ctrs[1] + " " + cond_rfl + " " +  ctrs[2] + " " + cond_str);
 		
 			// Stop the triggger - moved to after close the datastore for error checking
@@ -523,7 +534,7 @@ for(f = 0; f < n_fields; f++) {
 			n_try++;
 		}
 		if (n_try > 1){ 
-			log.write(log_fieldinfo + ", tries: " + n_try + "\n" + "----------" + "\n");
+			log.write(log_fieldinfo + "RETRYING, tries: " + n_try + "\n" + "----------" + "\n");
 			log.flush();
 		}
 		if (n_try == max_retries && not_done){

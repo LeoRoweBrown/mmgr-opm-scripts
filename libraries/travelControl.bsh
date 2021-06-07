@@ -199,13 +199,32 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
 	return 0;
 }
 
+String checkXYWait(stageName, x_target, y_target, logbuffer, timeout){
+	// timeout is ms
+	time_start = System.currentTimeMillis();
+	rtnMsg = "";
+	do {
+		Thread.sleep(500);
+		rtnMsg = checkXY(stageName, x_target, y_target, logbuffer);
+	} while (!rtnMsg.equals("") && System.currentTimeMillis() - time_start < timeout );
+	if (System.currentTimeMillis() - time_start > timeout){
+		rtnMsg = "Failed to move in time";
+		return rtnMsg;
+	} else {
+		rtnMsg = "";
+		return rtnMsg;
+	}
+	
+}
+
+
 String checkXY(stageName, x_target, y_target, logbuffer){
 	
 	rtnMsg = "";
-	int errors[] = {0, 0}; // unused, remove at some point probably
+	int[] errors = {0, 0}; // unused, remove at some point probably
 	
 	ypos = mmc.getYPosition(stageName);  // y position reported by stage
-	xpos = mmc.getYPosition(stageName);  // x position reported by stage
+	xpos = mmc.getXPosition(stageName);  // x position reported by stage
 	move_err_y = Math.abs(y_target - ypos);
 	move_err_x = Math.abs(x_target - xpos);
 	
@@ -217,6 +236,7 @@ String checkXY(stageName, x_target, y_target, logbuffer){
 		errors[1] = 1;
 		rtnMsg += "ERROR: Y incorrect: (" + ypos + " not " + y_target + "). ";
 	}
+	logbuffer.delete(0, logbuffer.length());  // clear if not empty
 	logbuffer.append("xpos: " + xpos + " (" + x_target + ") " + "ypos: " + ypos + " (" + y_target + "), ");
 	
 	return rtnMsg;
@@ -224,38 +244,41 @@ String checkXY(stageName, x_target, y_target, logbuffer){
 
 
 String checkStageErrors(stageName, port, trig_dist, scan_speed, logbuffer){
-	int errors[] = {0, 0, 0};
+	int[] errors = {0, 0, 0};
 	rtnMsg = "";
 
 	// 1: check if triggering
 	mmc.setSerialPortCommand(port,"?trig","\r");
 	trigger = mmc.getSerialPortAnswer(port, "\r");
-	logbuffer.append("trigger: " + trigger + "\n");
 	if ( trigger.equals("1") ){
 		errors[0] = 1;
 		rtnMsg += "ERROR: Triggering is not on. ";
 	}
-	logbuffer.append("trigger: " + trigger + " ");
+	logbuffer.append("trigger: " + trigger + ", ");
 	
 	// 2: check trigger distance
-	mmc.setSerialPortCommand(port,"?trgd","\r");
+	//
+	mmc.setSerialPortCommand(port,"?trigd","\r");
 	trigger_dist_serial = mmc.getSerialPortAnswer(port, "\r");
-	logbuffer.append("trigger distance: " + trigger_dist_serial + "\n");
 	trigger_dist_dub = Double.parseDouble(trigger_dist_serial);
 	if ( Math.abs(trigger_dist_dub - trig_dist) > 1e-4 ){
 		errors[1] = 1;
-		rtnMsg += "ERROR: Trigger distance incorrect (" + trigger_dist_serial + " not " + trig_dist + "). ");
+		rtnMsg += "ERROR: Trigger distance incorrect (" + trigger_dist_serial + " not " + trig_dist + "). ";
 	}
-	logbuffer.append("trigger distance: " + trigger_dist_serial + " (" + trig_dist + ") ");
+	logbuffer.append("trigger distance: " + trigger_dist_serial + " (" + trig_dist + "), ");
 	
 	// 3: check scan speed
-	mmc.setSerialPortCommand(port,"?speed y","\r");
-	scan_speed_serial = mmc.getSerialPortAnswer(port, "\r");
-	logbuffer.append("scan speed: " + scan_speed_serial + " (" + scan_speed + ")" + "\n");
+	// mmc.setSerialPortCommand(port,"?speed","\r");
+	// scan_speed_serial = mmc.getSerialPortAnswer(port, "\r");
+	// use device adapter to get this
+	scan_speed_serial = mmc.getProperty(stageName, "SpeedY [mm/s]");
+	// print(scan_speed_serial_dub);
+	// print(scan_speed);
+	logbuffer.append("scan speed: " + scan_speed_serial + " (" + scan_speed + "), ");
 	scan_speed_serial_dub = Double.parseDouble(scan_speed_serial);
-	if ( Math.abs(scan_speed_serial_dub - scan_speed) > 1e-4 ){
+	if ( Math.abs(scan_speed_serial_dub - scan_speed) > 1e-5 ){
 		errors[2] = 1;
-		rtnMsg += "ERROR: Scan speed incorrect (" + scan_speed_serial + " not " + scan_speed + "). ");
+		rtnMsg += "ERROR: Scan speed incorrect (" + scan_speed_serial + " not " + scan_speed + "). ";
 	}
 	
 	return rtnMsg;
