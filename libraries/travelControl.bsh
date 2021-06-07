@@ -136,20 +136,33 @@ int travelToPosition(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStage
 	return 0;
 }
 
-int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,timeout) {
+int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,timeout,logbuffer) {
+	// version without logging
+	dummy = new StringBuffer();  // lost in scope
+	return travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,timeout,dummy);
+}
+
+int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,timeout,logbuffer) {
+	// Mainly used and highest level command called by the main script to move between positions
+	// makes sure arrives at the position when moving between positions in the position list
 	int wait = 1;
 	double start_movetime = System.currentTimeMillis();
 	double movetime = 0.0;
 	moved = false;
-	
+	// retry until the timeout is exceeded
 	while(!moved && movetime < timeout){
 		try {
 			generalTravel(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,wait);
-			moved = true;
+			try{
+				checkXYZ(stageName, zStageName, aim_x_pos, aim_y_pos, aim_z_pos, logbuffer)
+				moved = true;
+			} catch(Exception e){
+				moved = false;
+			}
 		}
-		catch(Exception e) {
+		catch(Exception e2) {
 			moved = false;
-			if (movetime > timeout) throw e;
+			if (movetime > timeout) throw e2;
 		}
 		movetime = (System.currentTimeMillis() - start_movetime)/1000.0;
 	}
@@ -163,9 +176,16 @@ int travelToPositionNoWait(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,
 	return 0;
 }
 
-int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
-	// Robust version of just setting XY position, checks if reached position
+int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, logbuffer){
+	// version without logging
+	dummy = new StringBuffer();  // lost in scope
+	return setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, logbuffer);
+
+int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, logbuffer){
+	// Robust version of just setting XY position, checks if started moving
 	// but also is as fast as possible if it succeeds
+	// only handles fatal communication errors to the stage, not whether
+	// it makes the full scan distance (use checkXYZ) after acq.
 	double yStartPos = mmc.getYPosition(stageName);
 	double start_movetime = System.currentTimeMillis();
 	double movetime = 0.0;
@@ -173,6 +193,7 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
 	do{
 		try {
 			// if it failed the first time go back to beginning
+			// this only handles fatal communication errors to stage
 			if (moved == false){
 				mmc.setSerialPortCommand("COM1","!trig 0",term);
 				Thread.sleep(100);  // 10Hz polling time?
@@ -199,15 +220,27 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
 	return 0;
 }
 
-String checkXY(stageName, x_target, y_target, logbuffer){
-	
+int[] checkXYZ(stageName, zStageName, x_target, y_target, z_target){
+	// checkXYZ without logging
+	dummy = new StringBuffer();  // lost in scope
+	return checkXYZ(stageName, zStageName, x_target, y_target, z_target, dummy);
+}
+
+int[] checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer){
+	// Raises MMException if the position is not correct, make sure to handle it correctly
+	//
+	// check X Y and Z positions. Is used automatically when going between positions
+	// i.e. with traveToPosition commands, needs to be run manually for setXYPosition commands
+	// which set the stage moving for acq. The image acq would most likely hang anyway though.
 	rtnMsg = "";
-	int errors[] = {0, 0}; // unused, remove at some point probably
 	
 	ypos = mmc.getYPosition(stageName);  // y position reported by stage
 	xpos = mmc.getYPosition(stageName);  // x position reported by stage
+	zpos = mmc.getPosition(zStageName);  // x position reported by stage
+	
 	move_err_y = Math.abs(y_target - ypos);
 	move_err_x = Math.abs(x_target - xpos);
+	move_err_z = Math.abs(z_target - zpos);
 	
 	if (move_err_x > 0.1){
 		errors[0] = 1;
@@ -217,9 +250,16 @@ String checkXY(stageName, x_target, y_target, logbuffer){
 		errors[1] = 1;
 		rtnMsg += "ERROR: Y incorrect: (" + ypos + " not " + y_target + "). ";
 	}
-	logbuffer.append("xpos: " + xpos + " (" + x_target + ") " + "ypos: " + ypos + " (" + y_target + "), ");
+	if (move_err_z > 0.1){
+		errors[1] = 1;
+		rtnMsg += "ERROR: Z incorrect: (" + zpos + " not " + z_target + "). ";
+	}
+	logbuffer.append("xpos: " + xpos + " (" + x_target + ") ypos: " + ypos + " (" + y_target + ") ypos: " + ypos + " (" + y_target + ") , ");
+	if (!rtnMsg.equals("")){
+		throw new MMException(rtnMsg);
+	}
 	
-	return rtnMsg;
+	return new int[]{xpos, ypos, zpos};
 }
 
 

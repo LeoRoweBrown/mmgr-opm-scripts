@@ -342,7 +342,18 @@ for(f = 0; f < n_fields; f++) {
 			sc.message("Filter position: " + fw_pos[w]);
 			
 			// move back to start position for each channel
-			travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s);
+			try{
+				move_error_buffer.append("Start pos: ");  // the stringbuffer, move_error_buffer passed to traveToPositionRetry
+				travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s,move_error_buffer);
+			} catch (Exception e) { 
+				// raises a timeout exception
+				log.write(log_fieldinfo + "Failed to move to position in time (timeout: " + movetimeout_s + ") " + e.toString() + "\n");
+				log.flush();
+				err_out = e;
+				// Should I add a time to just, wait? Also clear the serial buffer?
+				continue;
+			}
+				
 			// travelToPosition(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName);
 			String end_dir;  // scope
 			if (save_type == 1) {
@@ -374,7 +385,7 @@ for(f = 0; f < n_fields; f++) {
 				// wavelength
 				labviewFileAcqStart(filedir);
 				//sc.message("Created files");
-				ctr = 0;
+				ctr = 0;  // one counter for one camera
 		/* 		ctrs[0] = 0; // end ctr 
 				ctrs[1] = 0; // c1 ctr
 				ctrs[2] = 0; // c2 ctr */
@@ -412,7 +423,7 @@ for(f = 0; f < n_fields; f++) {
 				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s); // start the move
 				
 				move_error_buffer.append("End pos: ");
-				errMsg = checkXY(stageName, x_pos[f], y_end[f], move_error_buffer); // check end is correct (debugging)
+				err = checkXY(stageName, x_pos[f], y_end[f], move_error_buffer); // check end is correct (debugging)
 				if (!errMsg.equals("")){
 					log.write(log_fieldinfo + "End position error: " + errMsg + "\n");
 					log.flush();
