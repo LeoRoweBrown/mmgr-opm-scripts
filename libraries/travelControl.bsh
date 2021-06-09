@@ -136,7 +136,7 @@ int travelToPosition(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStage
 	return 0;
 }
 
-int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,timeout,logbuffer) {
+int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,timeout) {
 	// version without logging
 	dummy = new StringBuffer();  // lost in scope
 	return travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,timeout,dummy);
@@ -152,16 +152,13 @@ int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,z
 	// retry until the timeout is exceeded
 	while(!moved && movetime < timeout){
 		try {
-			generalTravel(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName,wait);
-			try{
-				checkXYZ(stageName, zStageName, aim_x_pos, aim_y_pos, aim_z_pos, logbuffer)
-				moved = true;
-			} catch(Exception e){
-				moved = false;
-			}
+			travelToPosition(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName);
+			checkXYZ(stageName, zStageName, aim_x_pos, aim_y_pos, aim_z_pos, logbuffer);
+			moved = true;
 		}
 		catch(Exception e2) {
 			moved = false;
+			sc.message("FAILED TO MOVE WITH ERROR: " + e2.toString());
 			if (movetime > timeout) throw e2;
 		}
 		movetime = (System.currentTimeMillis() - start_movetime)/1000.0;
@@ -176,10 +173,11 @@ int travelToPositionNoWait(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,
 	return 0;
 }
 
-int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, logbuffer){
-	// version without logging
+int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
+	// version without logging (not actually used right now)
 	dummy = new StringBuffer();  // lost in scope
-	return setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, logbuffer);
+	return setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, dummy);
+}
 
 int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, logbuffer){
 	// Robust version of just setting XY position, checks if started moving
@@ -235,7 +233,7 @@ int[] checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer){
 	rtnMsg = "";
 	
 	ypos = mmc.getYPosition(stageName);  // y position reported by stage
-	xpos = mmc.getYPosition(stageName);  // x position reported by stage
+	xpos = mmc.getXPosition(stageName);  // x position reported by stage
 	zpos = mmc.getPosition(zStageName);  // x position reported by stage
 	
 	move_err_y = Math.abs(y_target - ypos);
@@ -243,18 +241,15 @@ int[] checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer){
 	move_err_z = Math.abs(z_target - zpos);
 	
 	if (move_err_x > 0.1){
-		errors[0] = 1;
 		rtnMsg += "ERROR: X incorrect: (" + xpos + " not " + x_target + "). ";
 	}
 	if (move_err_y > 0.1){
-		errors[1] = 1;
 		rtnMsg += "ERROR: Y incorrect: (" + ypos + " not " + y_target + "). ";
 	}
 	if (move_err_z > 0.1){
-		errors[1] = 1;
 		rtnMsg += "ERROR: Z incorrect: (" + zpos + " not " + z_target + "). ";
 	}
-	logbuffer.append("xpos: " + xpos + " (" + x_target + ") ypos: " + ypos + " (" + y_target + ") ypos: " + ypos + " (" + y_target + ") , ");
+	logbuffer.append("xpos: " + xpos + " (" + x_target + ") ypos: " + ypos + " (" + y_target + ") zpos: " + zpos + " (" + z_target + ") ,");
 	if (!rtnMsg.equals("")){
 		throw new MMException(rtnMsg);
 	}
@@ -262,41 +257,60 @@ int[] checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer){
 	return new int[]{xpos, ypos, zpos};
 }
 
+int checkXYZWait(stageName, zStageName, x_target, y_target, z_target, logbuffer, timeout){
+	// checks the XYZ are correct and waits for time <timeout> until failing 
+	// timeout is in seconds
+	double start = System.currentTimeMillis();
+	time = 0.0;
+	success = false;
+	// retry until the timeout is exceeded
+	while(!success && time < timeout){
+		try {
+			checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer);
+			success = true;
+		} catch(Exception e) {
+			if (time > timeout) throw e;
+		}
+		time = (System.currentTimeMillis() - start)/1000.0;
+	}
+	return 0;
+}
+		
 
-String checkStageErrors(stageName, port, trig_dist, scan_speed, logbuffer){
-	int errors[] = {0, 0, 0};
+
+int checkStageErrors(stageName, port, trig_dist, scan_speed, logbuffer){
 	rtnMsg = "";
 
 	// 1: check if triggering
 	mmc.setSerialPortCommand(port,"?trig","\r");
 	trigger = mmc.getSerialPortAnswer(port, "\r");
-	logbuffer.append("trigger: " + trigger + "\n");
-	if ( trigger.equals("1") ){
-		errors[0] = 1;
+	if ( !trigger.equals("1") ){
 		rtnMsg += "ERROR: Triggering is not on. ";
 	}
 	logbuffer.append("trigger: " + trigger + " ");
 	
 	// 2: check trigger distance
-	mmc.setSerialPortCommand(port,"?trgd","\r");
+	mmc.setSerialPortCommand(port,"?trigd","\r");
 	trigger_dist_serial = mmc.getSerialPortAnswer(port, "\r");
-	logbuffer.append("trigger distance: " + trigger_dist_serial + "\n");
 	trigger_dist_dub = Double.parseDouble(trigger_dist_serial);
 	if ( Math.abs(trigger_dist_dub - trig_dist) > 1e-4 ){
-		errors[1] = 1;
-		rtnMsg += "ERROR: Trigger distance incorrect (" + trigger_dist_serial + " not " + trig_dist + "). ");
+		rtnMsg += "ERROR: Trigger distance incorrect (" + trigger_dist_serial + " not " + trig_dist + "). ";
 	}
 	logbuffer.append("trigger distance: " + trigger_dist_serial + " (" + trig_dist + ") ");
 	
 	// 3: check scan speed
-	mmc.setSerialPortCommand(port,"?speed y","\r");
-	scan_speed_serial = mmc.getSerialPortAnswer(port, "\r");
+	// mmc.setSerialPortCommand(port,"?speed y","\r");
+	// scan_speed_serial = mmc.getSerialPortAnswer(port, "\r");
+	scan_speed_serial = mmc.getProperty(stageName, "SpeedX [mm/s]");
 	logbuffer.append("scan speed: " + scan_speed_serial + " (" + scan_speed + ")" + "\n");
 	scan_speed_serial_dub = Double.parseDouble(scan_speed_serial);
+
 	if ( Math.abs(scan_speed_serial_dub - scan_speed) > 1e-4 ){
-		errors[2] = 1;
-		rtnMsg += "ERROR: Scan speed incorrect (" + scan_speed_serial + " not " + scan_speed + "). ");
+		rtnMsg += "ERROR: Scan speed incorrect (" + scan_speed_serial + " not " + scan_speed + "). ";
 	}
 	
-	return rtnMsg;
-}	
+	if (!rtnMsg.equals("")){
+		throw new MMException(rtnMsg);
+	}
+	return 0;
+}

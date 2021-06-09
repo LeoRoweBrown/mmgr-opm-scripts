@@ -39,7 +39,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/accelerator/20210510_bakal04_Mar/310321/main_oneRowPerCondition/" + dateFormat.format(date) + "/";
+savedir = "E:/pollen/long_timelapse_test/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -60,7 +60,7 @@ sc.message("Successfully cleaned up");
 
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 300; //in microns
+	dist_from_ctr = 250; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -77,7 +77,7 @@ sc.message("Successfully cleaned up");
 	filter_naming = true;
 	max_field_skips = 6;
 	max_retries = 4;
-	movetimeout_s = 4*60;
+	movetimeout_s = 20;
 	max_dropped_frames = 1;
 
 	trg_dist = 1.4; //micron
@@ -97,8 +97,8 @@ sc.message("Successfully cleaned up");
 	//las4 = 5; //las 4
 
 // Time-lapse parameters
-	n_run = 1;
-	run_interval = 60*8; // in minutes
+	n_run = 100;
+	run_interval = 1; // in minutes
 	first_run =0; // 0-indexing
 
 // Saving parameters
@@ -111,12 +111,12 @@ sc.message("Successfully cleaned up");
 // Filter wheel positions and laser channels
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-int[] fw_pos = {1,2,4};
+int[] fw_pos = {1,2,3}; //,4};
 // double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {3,2,0}; // DAQ channels corresponding to each fw pos
+int[] las_channels = {3,2,1}; // ,0}; // DAQ channels corresponding to each fw pos
 int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {5, 5, 5};
-int[] exposures  = {8, 8, 8};
+int[] amplitudes = {2, 2, 2}; // , 2};
+int[] exposures  = {8, 8, 8}; //,8};
 
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
@@ -277,8 +277,6 @@ debug.flush();
 	setUpFocus();
 	sc.message("Focus done");
 	mmc.setSerialPortCommand("COM1","!trig 0",term); 
-	sc.message("Travel");
-	travelToPositionRetry(f_pos[0],x_pos[0],y_bg[0],travel_speed,stageName,zStageName,movetimeout_s);
 	
 	sc.message("Initializing buffer"); 
 	mmc.initializeCircularBuffer();
@@ -287,7 +285,7 @@ new ij.gui.WaitForUserDialog("Configure the LabView program","Activate!").show()
 
 Exception err_out; // setting up exception for this scope
 skip_count = 0;
-log_fieldinfo = ""; 
+log_fieldinfo = "";
 for(index = first_run; index < n_run; index++) {
 	sc.message("Starting run loop");
 	
@@ -297,6 +295,7 @@ for(index = first_run; index < n_run; index++) {
 	//Stop the triggger
 	mmc.setSerialPortCommand("COM1","!trig 0",term); 
 	// Move to the first position
+	sc.message("Travel");
 	travelToPositionRetry(f_pos[0],x_pos[0],y_bg[0],travel_speed,stageName,zStageName,movetimeout_s);
 
 	// int[] ctrs = {0,0,0}; // Total number of images acquired, counter for reflect cam, counter for straight cam 
@@ -308,11 +307,12 @@ for(index = first_run; index < n_run; index++) {
 	}
 	skip_count = 0;  // reset each run
 	last_five_occur = System.currentTimeMillis();
-
+	sc.message("pre started");
 // loop for fields
 for(f = 0; f < n_fields; f++) {
 	// loop for filter wheels
 	for (w = 0; w < fw_pos.length; w++) { 
+		sc.message("started");
 		not_done = true;
 		n_try = 0;
 		while (not_done && n_try < max_retries){
@@ -327,6 +327,8 @@ for(f = 0; f < n_fields; f++) {
 			// combined at end into the debug error log
 			move_error_buffer = new StringBuffer();
 			setup_stage_buffer = new StringBuffer();
+			stage_info_buffer = new StringBuffer();
+			dropped_buffer = new StringBuffer();
 			
 			Datastore datastore;
 		
@@ -342,6 +344,7 @@ for(f = 0; f < n_fields; f++) {
 			sc.message("Filter position: " + fw_pos[w]);
 			
 			// move back to start position for each channel
+			
 			try{
 				move_error_buffer.append("Start pos: ");  // the stringbuffer, move_error_buffer passed to traveToPositionRetry
 				travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s,move_error_buffer);
@@ -351,8 +354,10 @@ for(f = 0; f < n_fields; f++) {
 				log.flush();
 				err_out = e;
 				// Should I add a time to just, wait? Also clear the serial buffer?
+				not_done = true;
 				continue;
 			}
+			sc.message("reached start position");
 				
 			// travelToPosition(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName);
 			String end_dir;  // scope
@@ -404,6 +409,7 @@ for(f = 0; f < n_fields; f++) {
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
 				err_out = e;
+				not_done = true;
 				continue;
 			}
 			// Clear the images which may be left
@@ -412,34 +418,20 @@ for(f = 0; f < n_fields; f++) {
 			sc.message("moving to x=" + x_pos[f] + " y= " + y_end[f]);
 			
 			try{
-				move_error_buffer.append("Start pos: ");
-				errMsg = checkXY(stageName, x_pos[f], y_bg[f], move_error_buffer); // check start is correct (debugging)
-				
-				if (!errMsg.equals("")){
-					log.write(log_fieldinfo + "Start position error: " + errMsg + "\n");
-					log.flush();
-				}
-				
+				// start the acquisition 
 				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s); // start the move
-				
-				move_error_buffer.append("End pos: ");
-				err = checkXY(stageName, x_pos[f], y_end[f], move_error_buffer); // check end is correct (debugging)
-				if (!errMsg.equals("")){
-					log.write(log_fieldinfo + "End position error: " + errMsg + "\n");
-					log.flush();
-				}
 				// now get check stage settings were correct
-				errMsg = checkStageErrors(stageName, "COM1", trig_dist, scan_speed, logbuffer);
-				
+				checkStageErrors(stageName, "COM1", trg_dist, scan_speed, move_error_buffer);
 			}
 			catch(Exception e){
 				// throw new MMException("ERROR: Stage not responding");
 				print("Problem moving stage, retrying field (" + (n_try+1) + ")");
-				log.write(log_fieldinfo + ", Failed in setXYPositionForAcqRetry: " + e.toString() + "\n");
+				log.write(log_fieldinfo + ", Stage move failed with: " + e.toString() + "\n");
 				log.flush();
 				n_try++;
 				mmc.stopSequenceAcquisition(cam);
 				err_out = e;
+				not_done = true;
 				continue;
 			}
 			print("Moved");
@@ -469,6 +461,17 @@ for(f = 0; f < n_fields; f++) {
 				log.flush();
 				err_out = e;
 				not_done = true; // this was inside a catch, maybe this was causing problems?
+			}
+			// make sure end position correct
+			try{
+				move_error_buffer.append("End pos: ");
+				end_pos_array = checkXYZWait(stageName, zStageName, x_pos[f], y_end[f], f_pos[f], move_error_buffer, 10); // check end is correct (debugging)
+			} catch (Exception e) {
+				log.write(log_fieldinfo + "End position error: " + e.toString() + "\n");
+				log.flush();
+				err_out = e;  // maybe we should stack the errors but is handled in log so, it's okay
+				not_done = true;
+				// don't continue, just let loop complete and retry
 			}
 			
 			datastore = datastore_array[0]; // we only have one camera
