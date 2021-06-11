@@ -39,7 +39,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/pollen/long_timelapse_test/" + dateFormat.format(date) + "/";
+savedir = "E:/accelerator/sahai_20210610/main/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -60,7 +60,7 @@ sc.message("Successfully cleaned up");
 
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 250; //in microns
+	dist_from_ctr = 750; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -77,7 +77,7 @@ sc.message("Successfully cleaned up");
 	filter_naming = true;
 	max_field_skips = 6;
 	max_retries = 4;
-	movetimeout_s = 20;
+	movetimeout_s = 60;
 	max_dropped_frames = 1;
 
 	trg_dist = 1.4; //micron
@@ -97,8 +97,8 @@ sc.message("Successfully cleaned up");
 	//las4 = 5; //las 4
 
 // Time-lapse parameters
-	n_run = 100;
-	run_interval = 1; // in minutes
+	n_run = 200;
+	run_interval = 0; // in minutes
 	first_run =0; // 0-indexing
 
 // Saving parameters
@@ -111,12 +111,12 @@ sc.message("Successfully cleaned up");
 // Filter wheel positions and laser channels
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-int[] fw_pos = {1,2,3}; //,4};
+int[] fw_pos = {1,4}; //,4};
 // double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {3,2,1}; // ,0}; // DAQ channels corresponding to each fw pos
+int[] las_channels = {3,0}; // ,0}; // DAQ channels corresponding to each fw pos
 int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {2, 2, 2}; // , 2};
-int[] exposures  = {8, 8, 8}; //,8};
+int[] amplitudes = {5, 5}; // , 2};
+int[] exposures  = {8, 8}; //,8};
 
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
