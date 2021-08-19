@@ -81,6 +81,25 @@ int convertCtr(int[] f_pos, int[] x_pos, int[] y_bg, int[] y_end, int bef_length
 	return 0; 
 }
 
+int convertCtrZ(int[] f_bg, int[] f_end, int[] x_pos, int[] y_pos, int bef_length, int aft_length) {
+	PositionList pl = mm.positions().getPositionList();
+	// pl = gui.getPositionList();
+	n = pl.getNumberOfPositions();
+	for (i=0; i < n; i++) {
+	    mp = pl.getPosition(i);
+	    
+		x = (int) Math.floor(mp.getX()); 
+		y = (int) Math.floor(mp.getY()); 
+		f = (int) Math.floor(mp.getZ()); 
+	
+		x_pos[i] = x;
+		f_bg[i] = f - bef_length;//Math.min(y1,y2);
+		f_end[i] = f + aft_length; //Math.max(y1,y2);
+		y_pos[i] = y;
+	}
+	return 0; 
+}
+
 int convertGrid(int[] f_pos,int[] x_pos, int[] y_bg, int[] y_end, int dist_from_ctr, int lateral_offset, int n_power) {
 	PositionList pl = mm.positions().getPositionList();
 	// pl = gui.getPositionList();
