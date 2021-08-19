@@ -1,0 +1,168 @@
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+import org.micromanager.internal.utils.MMException;
+
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers_debug.bsh");
+
+mmc = mm.getCMMCore();
+sc = mm.getScriptController();
+
+// print("In correct file");
+
+// Image while scanning; hardcoded positions for the spheroids
+// For FRET timelapse imaging of several fields
+// Deleted comments (see in 0.2_one_field)
+String zStageName = "ZAxis";
+// String zStageName = "ThorZDrive";
+String stageName = mmc.getXYStageDevice();
+String cam = "pco_camera_bis"; 	
+String acq = "acq_rfl"; 	
+
+DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
+Date date = new Date();
+
+savedir = "E:/movetest_3/" + dateFormat.format(date) + "/";
+
+//straight_dir = savedir;
+//reflect_dir = savedir;
+new File(savedir).mkdirs();
+new File(savedir).mkdirs();
+
+n_runs = 300;
+
+PositionList pl = mm.positions().getPositionList();
+
+int n_fields = posCtrNum();
+int[] x_pos = new int[n_fields];
+int[] y_bg = new int[n_fields];
+int[] y_end= new int[n_fields];
+int[] f_pos = new int[n_fields];
+
+port = "COM1";
+
+trg_dist = 1.4; //micron
+
+double travel_speed = 10;
+double scan_speed = 0.2; 
+dist_from_ctr = 200; //in microns
+movetimeout_s = 60;
+scan_tries = 3;
+
+int ret = convertCtr(f_pos,x_pos,y_bg,y_end,dist_from_ctr,dist_from_ctr);	
+
+// LOG
+BufferedWriter log = new BufferedWriter(new FileWriter(savedir + "log.txt"));
+log.write("Start of log date: " + dateFormat.format(date) + "\n");
+log.flush();
+
+BufferedWriter debug = new BufferedWriter(new FileWriter(savedir + "debug.txt"));
+debug.write("Start of log date: " + dateFormat.format(date) + "\n");
+debug.flush();
+
+BufferedWriter errorcount = new BufferedWriter(new FileWriter(savedir + "errorcount.txt"));
+errorcount.write("Start of log date: " + dateFormat.format(date) + "\n");
+errorcount.flush();
+
+move_well_n_err = 0;
+setup_n_err = 0;
+scan_start_n_err = 0;
+scan_end_n_err = 0;
+
+mmc.setSerialPortCommand("COM1","!trigd " + trg_dist,"\r");// microns - set this once
+
+for (n = 0; n < n_runs; n++){
+	for(f = 0; f < n_fields; f++) {
+
+		Date date = new Date();
+		datestr = dateFormat.format(date);
+		log_fieldinfo = "\n" + datestr + " Run: " + n + " Field: " + f + " ";
+		debug.write(log_fieldinfo);
+		debug.flush();
+		
+		// combined at end into the debug error log
+		move_error_buffer = new StringBuffer();
+		setup_stage_buffer = new StringBuffer();
+		stage_info_buffer = new StringBuffer();
+		dropped_buffer = new StringBuffer();
+
+	
+		try{
+			debug.write("Start pos: ");  // the stringbuffer, move_error_buffer passed to traveToPositionRetry
+			debug.flush();
+			travelToPositionRetry(f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,movetimeout_s,debug);
+		} catch (Exception e) { 
+			// raises a timeout exception
+			log.write(log_fieldinfo + "Failed to move to position in time (timeout: " + movetimeout_s + ") " + e.toString() + " ## ");
+			log.flush();
+			err_out = e;
+			move_well_n_err = move_well_n_err + 1;
+			// Should I add a time to just, wait? Also clear the serial buffer?
+			not_done = true;
+			continue;
+		}
+
+		try{
+			// start the acquisition 
+			setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], scan_tries, debug); // start the move
+		} catch (Exception e){
+			print("Problem moving stage");
+			log.write(log_fieldinfo + ", Stage move failed with: " + e.toString() + " ## SKIPPING ##");
+			log.flush();
+			scan_start_n_err = scan_start_n_err + 1;
+			continue;
+		}
+		
+		try{
+			// now get check stage settings were correct
+			setUpStageRetry(port,trg_dist,scan_speed,scan_tries,debug);
+		} catch (Exception e){
+			print("problem setting up stage " + e.toString());
+			mmc.setSerialPortCommand(port,"?trigd","\r");
+			trigger_dist_serial = mmc.getSerialPortAnswer(port, "\r");
+			print(trigger_dist_serial);
+			log.write(log_fieldinfo + ", Failed in setUpStage with: " + e.toString() + " ## SKIPPING ##");
+			log.flush();
+			setup_n_err = setup_n_err + 1; 
+			continue;
+		}
+		expected_scantime = (int)(2*dist_from_ctr/scan_speed);
+		Thread.sleep(expected_scantime);
+		try{
+			debug.write("End pos: ");
+			debug.flush();
+			end_pos_array = checkXYZWait(stageName, zStageName, x_pos[f], y_end[f], f_pos[f], debug, 50); // check end is correct (debugging)
+			debug.write("Scan success");
+			debug.flush();
+		} catch (Exception e) {
+			log.write(log_fieldinfo + "End position error: " + e.toString() + " ## ");
+			log.flush();
+			err_out = e;  // maybe we should stack the errors but is handled in log so, it's okay
+			not_done = true;
+			// don't continue, just let loop complete and retry
+			scan_end_n_err = scan_end_n_err + 1;
+		}
+
+		// combine the debugging and save to the debug log
+		// debug.write(log_fieldinfo + move_error_buffer.toString() + dropped_buffer.toString());
+		// debug.flush();
+	}
+}
+
+tot_err = move_well_n_err + setup_n_err + scan_start_n_err + scan_end_n_err;
+
+
+log.write("\n Ended with " + tot_err + " error(s):\n");
+log.write(move_well_n_err + " moving to well error(s)\n");
+log.write(setup_n_err + " setting up scan error(s)\n");
+log.write(scan_start_n_err + " scan starting error(s)\n");
+log.write(scan_end_n_err + " scan end error(s)\n");
+log.flush();
