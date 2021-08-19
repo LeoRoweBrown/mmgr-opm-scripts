@@ -39,7 +39,7 @@ String acq = "acq_rfl";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/accelerator/sahai_20210610/main/" + dateFormat.format(date) + "/";
+savedir = "E:/accelerator/French_20210816/main_fixed_polypico/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -60,7 +60,7 @@ sc.message("Successfully cleaned up");
 
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 750; //in microns
+	dist_from_ctr = 1000; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");
@@ -78,13 +78,14 @@ sc.message("Successfully cleaned up");
 	max_field_skips = 6;
 	max_retries = 4;
 	movetimeout_s = 60;
+	scan_tries = 3;
 	max_dropped_frames = 1;
 
 	trg_dist = 1.4; //micron
 	// Positions are in microns, exp. in ms, speed in mm/s = microns/ms. nimg is n. of images.
 	// double scan_speed = 0.025; // microns/ms
 	// double scan_speed = 0.01; 
-	double scan_speed = 0.1; 
+	double scan_speed = 0.2; 
 	
 	// in this script should be just one exposure time for the one camera, hasn't been updated
 	// exp1 = 10; //ms 
@@ -97,7 +98,7 @@ sc.message("Successfully cleaned up");
 	//las4 = 5; //las 4
 
 // Time-lapse parameters
-	n_run = 200;
+	n_run = 1;
 	run_interval = 0; // in minutes
 	first_run =0; // 0-indexing
 
@@ -111,12 +112,12 @@ sc.message("Successfully cleaned up");
 // Filter wheel positions and laser channels
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
-int[] fw_pos = {1,4}; //,4};
+int[] fw_pos = {1}; //,4};
 // double fw_angle = 60.0; // angle between filter wheel positions
-int[] las_channels = {3,0}; // ,0}; // DAQ channels corresponding to each fw pos
-int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {5, 5}; // , 2};
-int[] exposures  = {8, 8}; //,8};
+int[] las_channels = {3}; // ,0}; // DAQ channels corresponding to each fw pos
+int[] wavelengths = {457, 515, 561, 642};
+int[] amplitudes = {5}; // , 2};
+int[] exposures  = {2}; //,8};
 
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
@@ -302,7 +303,7 @@ for(index = first_run; index < n_run; index++) {
 	int ctr = 0; // Number of images
 
 	if (save_type == 0) {
-		throw(new NotImplementedException("Not supporting save after run in MM2 yet"));
+		throw new NotImplementedException("Not supporting save after run in MM2 yet");
 		// initAcq(n_reflect_img,cam_rfl,n_straight_img,cam_str,ctrs);
 	}
 	skip_count = 0;  // reset each run
@@ -419,7 +420,7 @@ for(f = 0; f < n_fields; f++) {
 			
 			try{
 				// start the acquisition 
-				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], movetimeout_s); // start the move
+				setXYPositionForAcqRetry(stageName, x_pos[f], y_end[f], scan_tries); // start the move
 				// now get check stage settings were correct
 				checkStageErrors(stageName, "COM1", trg_dist, scan_speed, move_error_buffer);
 			}
@@ -566,7 +567,7 @@ for(f = 0; f < n_fields; f++) {
 	// haven't updated for MM2 yet //
 	}
 	if (save_type == 0){
-		throw(new NotImplementedException("Not supporting save after run in MM2 yet"));
+		throw new NotImplementedException("Not supporting save after run in MM2 yet");
 		// closeAndSaveAcq(acq_rfl,cam_rfl,reflect_dir, acq_str,cam_str,straight_dir,index,0,save_type);
 	}	
 	sc.message("Run " + index +  " acquired!");	

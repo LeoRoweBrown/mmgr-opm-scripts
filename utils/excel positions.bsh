@@ -27,7 +27,9 @@ import org.micromanager.internal.utils.MMException;
 // Parameters
 // Experiment 
 // platemap = "E:\\CRUK\\20200820_CRUK33_fixedDrugs_reimage\\platemap.xls";
-platemap = "E:\\accelerator\\20210510_bakal04_Mar\\230421\\platemap.xls";
+// platemap = "E:/accelerator/French_20210705/platemap.xls";
+platemap = "T:/IBIN_Nina/20201029_fixedPlate/platemap.xls";
+
 
 gen_z = false;
 uni_z = true;

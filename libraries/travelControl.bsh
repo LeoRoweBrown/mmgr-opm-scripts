@@ -9,6 +9,13 @@ int setUpStage(trg_dist,scan_speed) {
 	mmc.setProperty(stageName, "SpeedX [mm/s]",scan_speed);
 	mmc.setProperty(stageName, "SpeedY [mm/s]",scan_speed);
 	
+	speedY = Double.parseDouble(mmc.getProperty(stageName, "SpeedY [mm/s]"));
+	speedX = Double.parseDouble(mmc.getProperty(stageName, "SpeedX [mm/s]"));
+	
+	if (Math.abs(speedY - scan_speed) > 1e-3 || Math.abs(speedY - scan_speed) > 1e-3){
+		throw new MMException("Scan speed not set correctly when setting up stage");
+	}
+	
 	// throw new Exception("Random test error");
 	return 0;
 }
@@ -112,6 +119,14 @@ int generalTravel(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageNam
 	// sc.message("Setting speed");
 	mmc.setProperty(stageName, "SpeedX [mm/s]",travel_speed);
 	mmc.setProperty(stageName, "SpeedY [mm/s]",travel_speed);
+	
+	speedY = Double.parseDouble(mmc.getProperty(stageName, "SpeedY [mm/s]"));
+	speedX = Double.parseDouble(mmc.getProperty(stageName, "SpeedX [mm/s]"));
+	
+	if (Math.abs(speedY - travel_speed) > 1e-3 || Math.abs(speedY - travel_speed) > 1e-3){
+		throw new MMException("Scan speed not set correctly");
+	}
+	
 	// sc.message("Getting positions");
 	cur_z_pos = mmc.getPosition(zStageName);	
 	if (wait == 0)
@@ -159,6 +174,8 @@ int travelToPositionRetry(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,z
 		catch(Exception e2) {
 			moved = false;
 			sc.message("FAILED TO MOVE WITH ERROR: " + e2.toString());
+			logbuffer.append(" ## FAILED TO MOVE WITH ERROR: " + e2.toString() + "## ");
+			// logbuffer.flush();
 			if (movetime > timeout) throw e2;
 		}
 		movetime = (System.currentTimeMillis() - start_movetime)/1000.0;
@@ -173,13 +190,13 @@ int travelToPositionNoWait(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,
 	return 0;
 }
 
-int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s){
+int setXYPositionForAcqRetry(stageName, x_pos, y_pos, retries){
 	// version without logging (not actually used right now)
 	dummy = new StringBuffer();  // lost in scope
-	return setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, dummy);
+	return setXYPositionForAcqRetry(stageName, x_pos, y_pos, retries, dummy);
 }
 
-int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, logbuffer){
+int setXYPositionForAcqRetry(stageName, x_pos, y_pos, tries, logbuffer){
 	// Robust version of just setting XY position, checks if started moving
 	// but also is as fast as possible if it succeeds
 	// only handles fatal communication errors to the stage, not whether
@@ -188,30 +205,39 @@ int setXYPositionForAcqRetry(stageName, x_pos, y_pos, timeout_s, logbuffer){
 	double start_movetime = System.currentTimeMillis();
 	double movetime = 0.0;
 	moved = true;
+	n_try = 1;
 	do{
 		try {
 			// if it failed the first time go back to beginning
 			// this only handles fatal communication errors to stage
 			if (moved == false){
-				mmc.setSerialPortCommand("COM1","!trig 0",term);
+				logbuffer.append("## resetting scan start position... ##");
+				// logbuffer.flush();
+				mmc.setSerialPortCommand("COM1","!trig 0","\r");
 				Thread.sleep(100);  // 10Hz polling time?
 				mmc.setXYPosition(stageName, x_pos, yStartPos);
+				// 120s to return to original position, this should probably not be hard-coded
+				checkXYWait(stageName, x_pos, y_pos, logbuffer, 120);
 				Thread.sleep(100);
-				mmc.setSerialPortCommand("COM1","!trig 1",term);
+				mmc.setSerialPortCommand("COM1","!trig 1","\r");
 				Thread.sleep(100);
+				// throw new Exception("test exception");
 			}
 			mmc.setXYPosition(stageName, x_pos, y_pos);
 			moved = true;
 		}
-		catch(Exception e) {
+		catch(Exception e) {  // if exception raised set moved to false 
 			moved = false;
+			logbuffer.append("## Failed to start scan, retrying " + "(" + n_try + "/" + tries + ") ##");
+			// logbuffer.flush();
 			// in case move was semi-successful and we're not at the beginning, clear buffer
 			mmc.clearCircularBuffer();
 			Thread.sleep(100);
+			n_try = n_try + 1;
 		}
 		movetime = (System.currentTimeMillis() - start_movetime)/1000.0;
-	} while(!moved && movetime < timeout_s);
-	if (movetime > movetimeout_s) {
+	} while(!moved && n_try < tries);
+	if (n_try > tries) {
 		print("movetime: " + movetime);
 		throw e;
 	}
@@ -234,11 +260,16 @@ int[] checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer){
 	
 	ypos = mmc.getYPosition(stageName);  // y position reported by stage
 	xpos = mmc.getXPosition(stageName);  // x position reported by stage
-	zpos = mmc.getPosition(zStageName);  // x position reported by stage
+	zpos = 0.0;
 	
 	move_err_y = Math.abs(y_target - ypos);
 	move_err_x = Math.abs(x_target - xpos);
-	move_err_z = Math.abs(z_target - zpos);
+	move_err_z = 0.0;
+	
+	if (zStageName != "None"){
+		zpos = mmc.getPosition(zStageName);  // x position reported by stage
+		move_err_z = Math.abs(z_target - zpos);
+	}
 	
 	if (move_err_x > 0.1){
 		rtnMsg += "ERROR: X incorrect: (" + xpos + " not " + x_target + "). ";
@@ -249,6 +280,7 @@ int[] checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer){
 	if (move_err_z > 0.1){
 		rtnMsg += "ERROR: Z incorrect: (" + zpos + " not " + z_target + "). ";
 	}
+		
 	logbuffer.append("xpos: " + xpos + " (" + x_target + ") ypos: " + ypos + " (" + y_target + ") zpos: " + zpos + " (" + z_target + ") ,");
 	if (!rtnMsg.equals("")){
 		throw new MMException(rtnMsg);
@@ -260,6 +292,7 @@ int[] checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer){
 int checkXYZWait(stageName, zStageName, x_target, y_target, z_target, logbuffer, timeout){
 	// checks the XYZ are correct and waits for time <timeout> until failing 
 	// timeout is in seconds
+	
 	double start = System.currentTimeMillis();
 	time = 0.0;
 	success = false;
@@ -269,9 +302,42 @@ int checkXYZWait(stageName, zStageName, x_target, y_target, z_target, logbuffer,
 			checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer);
 			success = true;
 		} catch(Exception e) {
-			if (time > timeout) throw e;
+			logbuffer.append("## Waiting 10 seconds in checkXYZWait... ##");
+			// logbuffer.flush();
+			Thread.sleep(10000);
 		}
 		time = (System.currentTimeMillis() - start)/1000.0;
+	}
+	if (!success && time > timeout){
+		throw e;
+	}
+	return 0;
+}
+
+int checkXYWait(stageName, x_target, y_target, logbuffer, timeout){
+	// checks the XYZ are correct and waits for time <timeout> until failing 
+	// timeout is in seconds
+	double start = System.currentTimeMillis();
+	time = 0.0;
+	success = false;
+	zStageName = "None";
+	z_target = 0;
+	
+	// retry until the timeout is exceeded
+	while(!success && time < timeout){
+		try {
+			checkXYZ(stageName, zStageName, x_target, y_target, z_target, logbuffer);
+			// throw new Exception("test exception checkxyzz");
+			success = true;
+		} catch(Exception e) {
+			logbuffer.append("## Waiting 10 seconds in checkXYWait... ##");
+			// logbuffer.flush();
+			Thread.sleep(10000);
+		}
+		time = (System.currentTimeMillis() - start)/1000.0;
+	}
+	if (!success && time > timeout){
+		throw e;
 	}
 	return 0;
 }
@@ -309,8 +375,12 @@ int checkStageErrors(stageName, port, trig_dist, scan_speed, logbuffer){
 		rtnMsg += "ERROR: Scan speed incorrect (" + scan_speed_serial + " not " + scan_speed + "). ";
 	}
 	
+	// logbuffer.flush();
+	
 	if (!rtnMsg.equals("")){
 		throw new MMException(rtnMsg);
-	}
+	}rtnMsg = "";
+
+
 	return 0;
 }
