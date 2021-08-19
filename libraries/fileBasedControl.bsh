@@ -17,7 +17,7 @@ int labviewFileAcqStart(filedir) {
 	labview_ready = "0";
 	// We wait for labview to set the file to "1", meaning it has started the loop
 	while(labview_ready.charAt(0) != '1'){
-		ret = readFromFile(filedir + "ready.txt");
+		String ret = readFromFile(filedir + "ready.txt");  // newer mmgr needs string declr
 		if (ret == null)
 			labview_ready  = "0";
 		else
@@ -37,7 +37,7 @@ int labviewFileAcqStart(filedir, las_channel, fw_position) {
 	// We wait for labview to set the file to "1", meaning it has started the loop
 	while(labview_ready.charAt(0) != '1'){
 		// ready is written by labVIEW
-		ret = readFromFile(filedir + "ready.txt");
+		String ret = readFromFile(filedir + "ready.txt");
 		if (ret == null)
 			labview_ready  = "0";
 		else
@@ -52,7 +52,7 @@ int labviewFileAcqStop(filedir) {
    labview_ready = "1";
 	// We wait for labview to set the file to "0", meaning it has stopped the loop
 	while(labview_ready.charAt(0) != '0'){
-		ret = readFromFile(filedir + "ready.txt");
+		String ret = readFromFile(filedir + "ready.txt");
 		if (ret == null)
 			labview_ready  = "1";
 		else
