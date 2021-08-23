@@ -75,11 +75,13 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_
 	}
 	// Idea is that it waits until all expected images are obtained, but if it times out
 	// it allows a max total number of dropped frames (max_dropped)
-	logbuffer.append("dropped: " + total_images_missing);
+	logbuffer.write("dropped: " + total_images_missing);
+	logbuffer.flush();
 	if (HangExit == 1){
 		if (total_images_missing > max_dropped){
 			print("Acquisition hanged and exceeded max dropped frames (" + max_dropped + ")");
-			logbuffer.append(" (ERROR) max: " + max_dropped + "\n");
+			logbuffer.write(" (ERROR) max: " + max_dropped + "\n");
+			logbuffer.flush();
 			throw new MMException("Acqusition hanged: no images found in buffer in time");
 			// return datastores;
 		}
@@ -90,7 +92,8 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_
 	else {
 		sc.message("Acquired with no dropped frames");
 	} // since error is raised in HangExit == 1 need to end line
-	logbuffer.append("\n");
+	logbuffer.write("\n");
+	logbuffer.flush();
 
 	return datastores;  // not needed? the datastores array is mutated // remove later and test
 }
