@@ -60,7 +60,7 @@ sc.message("Successfully cleaned up");
 
 // Position paramters
 	use_ctr = true;
-	dist_from_ctr = 1000; //in microns
+	dist_from_ctr = 500; //in microns
 	
 	first_field = 0; // 0-indexing
 	unset("z_offset");

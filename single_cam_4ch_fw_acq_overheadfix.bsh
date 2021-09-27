@@ -30,7 +30,7 @@ port_xy = "COM1";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/movetest_acq/" + dateFormat.format(date) + "/";
+savedir = "E:/accelerator/French_20210921/main_withScatter/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -51,8 +51,8 @@ sc.message("Successfully cleaned up");
 // General parameters
 	trg_dist = 1.4; //trigger distance in micron
 	double travel_speed = 10;  // travel speed mms/(?)
-	double scan_speed = 0.2;  // scan speed mm/s(?)
-	dist_from_ctr = 200;  // half of the total scan distance in um
+	double scan_speed = 0.14;  // scan speed mm/s(?)
+	dist_from_ctr = 500;  // half of the total scan distance in um
 	movetimeout_s = 60;  // timeout for stage travel
 	scan_tries = 3;  // general retry count until skipping field
 	max_retries = 3;  // maximum number of retries before skipping
@@ -60,14 +60,14 @@ sc.message("Successfully cleaned up");
 	max_dropped_frames = 1; // maximum dropped frames
 
 	filter_naming = true;
-	test_mode = true; // delete files after acquiring
+	test_mode = false; // delete files after acquiring
 	unset("z_offset");
 	z_offset = 0;//-100000;
 	y_offset = 0;
 
 // Time-lapse parameters 
-	n_run = 50;
-	run_interval = 0; // in minutes
+	n_run = 1;
+	run_interval = 30; // in minutes
 	first_run =0; // 0-indexing
 
 // Saving parameters
@@ -81,11 +81,12 @@ sc.message("Successfully cleaned up");
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
 // (count from 0)
-int[] fw_pos = {1,2}; //,4}; 
-int[] las_channels = {3,2}; // ,0}; // DAQ channels corresponding to each fw pos
-int[] wavelengths = {457, 515, 561, 642};
-int[] amplitudes = {5,5}; // , 2};
-int[] exposures  = {2, 2}; //,8};
+int[] fw_pos = {4,2,1,0}; //,4}; 
+int[] las_channels = {0,2,3,0}; // ,0}; // DAQ channels corresponding to each fw pos
+// int[] wavelengths = {457, 515, 561, 642};
+int[] wavelengths = {488, 515, 561, 642};
+int[] amplitudes = {1,5,1,1}; // , 2};
+int[] exposures  = {5, 5,5,5}; //,8};
 
 /////////////////////////////////////////////////////////////////////
 
@@ -289,9 +290,12 @@ for (index = 0; index < n_run; index++){  // runs
 					debug.write("Start pos: ");
 					debug.flush();
 					// move to start position with times out after movetimeout_s
+					travelStart = System.currentTimeMillis();
 					travelToPositionRetry(
 						f_pos[f],x_pos[f],y_bg[f],travel_speed,stageName,zStageName,
 						movetimeout_s,debug);
+					travelTime = System.currentTimeMillis() - travelStart;
+					sc.message("TravelRetry time " + travelTime + "ms"); 
 				} catch (Exception e) { 
 					// raises a timeout exception
 					log.write(log_fieldinfo 
@@ -308,7 +312,10 @@ for (index = 0; index < n_run; index++){  // runs
 				// Set trigger, scan speed, etc. for acquisition
 				try{
 					// retries while checking stage settings are correct
+					setupStart = System.currentTimeMillis();
 					setUpStageRetry(port_xy,trg_dist,scan_speed,scan_tries,debug);
+					setupTime = System.currentTimeMillis() - setupStart;
+					sc.message("setUpStageRetry time " + setupTime + "ms"); 
 				} catch (Exception e){
 					print("Problem setting up stage (setUpStageRetry) " + e.toString());
 					log.write(log_fieldinfo + ", Failed in setUpStage with: " 
@@ -507,3 +514,5 @@ log.write(scan_end_n_err + " scan end error(s)\n");
 log.write("Total fields**runs: " + n_fields*n_run);  
 log.write(" Number of channels: " + fw_pos.length);
 log.flush();
+log.close();
+debug.close();
