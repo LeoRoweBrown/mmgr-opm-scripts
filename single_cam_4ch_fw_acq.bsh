@@ -30,7 +30,7 @@ port_xy = "COM1";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/movetest_acq/" + dateFormat.format(date) + "/";
+savedir = "E:/French_20210921/background/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -60,13 +60,13 @@ sc.message("Successfully cleaned up");
 	max_dropped_frames = 1; // maximum dropped frames
 
 	filter_naming = true;
-	test_mode = true; // delete files after acquiring
+	test_mode = false; // delete files after acquiring
 	unset("z_offset");
 	z_offset = 0;//-100000;
 	y_offset = 0;
 
 // Time-lapse parameters 
-	n_run = 50;
+	n_run = 1;
 	run_interval = 0; // in minutes
 	first_run =0; // 0-indexing
 
@@ -81,11 +81,12 @@ sc.message("Successfully cleaned up");
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
 // (count from 0)
-int[] fw_pos = {1,2}; //,4}; 
-int[] las_channels = {3,2}; // ,0}; // DAQ channels corresponding to each fw pos
-int[] wavelengths = {457, 515, 561, 642};
-int[] amplitudes = {5,5}; // , 2};
-int[] exposures  = {2, 2}; //,8};
+int[] fw_pos = {4,2,1}; //,4}; 
+int[] las_channels = {0,2,3}; // ,0}; // DAQ channels corresponding to each fw pos
+// int[] wavelengths = {457, 515, 561, 642};
+int[] wavelengths = {488, 515, 561, 642};
+int[] amplitudes = {5,5,5}; // , 2};
+int[] exposures  = {2, 2,2}; //,8};
 
 /////////////////////////////////////////////////////////////////////
 

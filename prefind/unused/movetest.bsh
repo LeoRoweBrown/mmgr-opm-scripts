@@ -1,0 +1,8 @@
+mmc.setXYPosition(stageName, 10026, -2809);
+mmc.setSerialPortCommand("COM1","?statusaxis","\r"); 
+status = mmc.getSerialPortAnswer("COM1","\r"); 
+print(status);
+Thread.sleep(5000);
+mmc.setSerialPortCommand("COM1","?statusaxis","\r"); 
+status = mmc.getSerialPortAnswer("COM1","\r"); 
+print(status);

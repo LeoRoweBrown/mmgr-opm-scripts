@@ -1,0 +1,3 @@
+import ij.IJ;
+y = IJ.runMacroFile("C:\\Users\\OPMuser\\Documents\\micromanager\\mmgr-opm-scripts\\utils\\OPM_AF_analyse.ijm", "200");
+print(y);

@@ -1,0 +1,65 @@
+import ij.ImagePlus;
+import org.micromanager.data.Datastore;
+import org.micromanager.PositionList;
+import org.micromanager.StagePosition;
+import org.micromanager.MultiStagePosition;
+import org.micromanager.DataProvider;
+import java.lang.*;
+import java.util.*;
+import java.util.List;
+
+List images = mm.live().snap(false);
+xyStage = mmc.getXYStageDevice();
+zStage = mmc.getFocusDevice();
+groupname = "Cam Trig";
+old_exposure = mmc.getExposure();
+old_group_set = "External";
+cam_device = mmc.getCameraDevice();
+//
+stage_speed_um_per_ms = 1;
+
+mmc.setProperty(xyStage, "SpeedX [mm/s]",stage_speed_um_per_ms);
+mmc.setProperty(xyStage, "SpeedY [mm/s]",stage_speed_um_per_ms);
+
+int numImages = 10;
+double intervalMs = 0;
+boolean stopOnOverflow = true;
+
+PositionList new_pl = new PositionList();
+PositionList pl = mm.positions().getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+//ASSUMING XY STAGE VALUES ARE IN UM
+y_scanwidth_um = 1000;
+exposure_for_scan = y_scanwidth_um/(numImages*stage_speed_um_per_ms);
+
+this_pos = pl.getPosition(0);
+
+mmc.setExposure(exposure_for_scan);
+mmc.setConfig(groupname, "Internal");
+mmc.prepareSequenceAcquisition(cam_device);
+
+//mmc.setXYPosition(this_pos.x, this_pos.y-(y_scanwidth_um/2));
+//mmc.waitForSystem();
+//mmc.setXYPosition(this_pos.x, this_pos.y+(y_scanwidth_um/2));
+
+mmc.setXYPosition(this_pos.x, this_pos.y-(y_scanwidth_um/2));
+mmc.waitForSystem();
+datastore = mm.acquisitions().runAcquisitionNonblocking();
+Thread.sleep(150);
+
+mmc.waitForSystem();
+mmc.setXYPosition(this_pos.x, this_pos.y+(y_scanwidth_um/2));
+
+DataProvider dp = mm.displays().getActiveDataViewer().getDataProvider();
+print(datastore);
+im = dp.getImagePlus();
+
+//images = mm.live().snap(false);
+//image = images.get(0);
+//Datastore store = mm.displays().show(image);
+
+
+//Thread.sleep(1000);
+//mmc.setConfig(groupname, old_group_set);
+//mmc.setExposure(old_exposure);

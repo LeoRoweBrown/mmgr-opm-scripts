@@ -12,6 +12,9 @@ import org.micromanager.data.Coordinates;
 import org.micromanager.internal.utils.MMException;
 
 source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/update_pos_xy_after_timepoint.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/live_find_coverslip.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/apply_z_shift_cslip.bsh");
 
 mmc = mm.getCMMCore();
 sc = mm.getScriptController();
@@ -30,13 +33,8 @@ port_xy = "COM1";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-// savedir = "E:/nina/prefind_test_20220609/main/" + dateFormat.format(date) + "/";
-savedir = "E:/nina/slow_z/main/" + dateFormat.format(date) + "/";
-// savedir = "E:/nina/20220426_fixed_square/background/" + dateFormat.format(date) + "/";
+savedir = "E:/nina/20220714_live_plate3/main_live6/" + dateFormat.format(date) + "/";
 
-//straight_dir = savedir;
-//reflect_dir = savedir;
-new File(savedir).mkdirs();
 new File(savedir).mkdirs();
 
 filedir = "E:/acquisition control files/";
@@ -53,14 +51,24 @@ sc.message("Successfully cleaned up");
 // General parameters
 	trg_dist = 1.4; //trigger distance in micron
 	double travel_speed = 10;  // travel speed mms/(?)
-	double scan_speed = 0.1; //0.01;/  // scan speed mm/s(?)
+	double[] scan_speeds = {0.05, 0.1, 0.1, 0.05}; //0.01;/  // scan speed mm/s(?)
 	// double[] scan_speeds = {0.15; 0.1; 0.15; 0.15;}
-	dist_from_ctr = 200;  // half of the total scan distance in um
+	dist_from_ctr = 250;  // half of the total scan distance in um
 	movetimeout_s = 60;  // timeout for stage travel
-	scan_tries = 3;  // general retry count until skipping field
-	max_retries = 3;  // maximum number of retries before skipping
-	max_field_skips = 3; // maximum skips per run before stopping
+	scan_tries = 5;  // general retry count until skipping field
+	max_retries = 5;  // maximum number of retries before skipping
+	max_field_skips = 5; // maximum skips per run before stopping
 	max_dropped_frames = 1; // maximum dropped frames
+	
+	// coverslip drift correction
+	n_pos_cslip = 15;
+	cslip_thresh = 3000;
+	step_z = -300;
+
+	max_z = -7200;
+	starting_z = -4500;
+
+	// cslip_dir = "E:/nina/20220714_live_plate3/cslip_find/22-07-21/15-17-50/";
 
 	filter_naming = true;
 	// REMEMBER TO CHANGE THIS!!!
@@ -75,10 +83,13 @@ sc.message("Successfully cleaned up");
 	// cols = 
 
 // Time-lapse parameters 
-	n_run = 20;
+	n_run = 9;
 	// n_run = 1;
-	run_interval = 20; // in minutes
+	run_interval = 480;//480; // in minutes
 	first_run =0; // 0-indexing
+
+	delay_s = 0*60*60;//185*60;
+
 
 // Saving parameters
 	save_type = 1;
@@ -93,12 +104,14 @@ sc.message("Successfully cleaned up");
 // (count from 0)
 unset("fw_pos");
 
-int[] fw_pos = {2}; // {3}; // //
-int[] las_channels =  {2}; //{1};//;  // DAQ channels corresponding to each fw pos
+int[] fw_pos = {5,3,2,1}; // {3}; // //
+int[] las_channels = {0,1,2,3}; //{1};//;  // DAQ channels corresponding to each fw pos
 int[] wavelengths = {457, 515, 561, 642};
 // int[] wavelengths =  {488, 515, 561, 642};
-float[] amplitudes = {5};// // {1};
-int[] exposures  =  {5};//
+
+float[] amplitudes = {2,2,2,5};// // {1};
+//float[] amplitudes = {0.3};//{0,0,0.5,0};// // {1};
+int[] exposures  = {10,5,5,10};//
 
 /////////////////////////////////////////////////////////////////////
 
@@ -190,8 +203,11 @@ out.write("\n" + "fw_pos");
 	for(i = 0;i< fw_pos.length;i++) {
 	out.write(" ; " + fw_pos[i]); 
 } 
-out.write("\n" + "scan_speed ; " + scan_speed + "\n");
-out.write("travel_speed ; " + travel_speed + "\n");
+out.write("\n" + "scan_speed");
+	for(i = 0; i<scan_speeds.length; i++){
+	out.write(" ; " + scan_speeds[i]);
+}
+out.write("\n travel_speed ; " + travel_speed + "\n");
 out.write("x_pos");
 	for(i = 0;i< n_fields;i++) { 	out.write(" ; " + x_pos[i]); }; 
 out.write("\n y_bg");
@@ -252,6 +268,13 @@ new ij.gui.WaitForUserDialog("Configure the LabView program","Activate!").show()
 // trigger distance (microns), axis, mode - set this once /////////////////////////////////
 initialiseStage(port_xy, trg_dist, debug);
 
+	sc.message("waiting " + (delay_s/60) + "minutes");
+	Thread.sleep(delay_s*1000);
+
+cslip_dir = savedir + "/live_cslip/start/";
+new File(cslip_dir).mkdirs();
+live_coverslip_detection(cslip_dir, starting_z, max_z, n_pos_cslip, cslip_thresh, step_z);
+
 for (index = 0; index < n_run; index++){  // runs
 	//Stop the triggger
 	mmc.setSerialPortCommand(port_xy,"!trig 0","\r"); 
@@ -262,16 +285,24 @@ for (index = 0; index < n_run; index++){  // runs
 	skip_count = 0;
 
 	sc.message("Starting run loop (" + index + "/" + (n_run-1) + ")");
-	
-	time_begin = System.currentTimeMillis();
+
+	cslip_original_dir = cslip_dir;
+	cslip_dir = savedir + "/live_cslip/run_" + index + "/";
+	new File(cslip_dir).mkdirs();
+
+	long time_begin = new Date().getTime();
+	// time_begin = System.currentTimeMillis();
 	sc.message("Time : " + time_begin); 
+	
 	
 	for(f = 0; f < n_fields; f++) {  // fields
 		for (w = 0; w < fw_pos.length; w++) { 
 			not_done = true;
 			n_try = 0;
 			while (not_done && n_try < max_retries){
+				err_count = 0;
 				n_try++;
+				sc.message("Attempt number " + n_try);
 				Date date = new Date();
 				datestr = dateFormat.format(date);
 				log_fieldinfo = "\n" + datestr + " Run: " + index + " Field: " + f + " ";
@@ -326,14 +357,14 @@ for (index = 0; index < n_run; index++){  // runs
 					move_well_n_err = move_well_n_err + 1;
 					// Should I add a time to just, wait? Also clear the serial buffer?
 					err_out = e;
-					not_done = true;
+					err_count += 1;
 					continue;
 				}
 				// Set trigger, scan speed, etc. for acquisition
 				try{
 					// retries while checking stage settings are correct
 					setupStart = System.currentTimeMillis();
-					setUpStageRetry(port_xy,trg_dist,scan_speed,scan_tries,debug);
+					setUpStageRetry(port_xy,trg_dist,scan_speeds[w],scan_tries,debug);
 					setupTime = System.currentTimeMillis() - setupStart;
 					sc.message("setUpStageRetry time " + setupTime + "ms"); 
 				} catch (Exception e){
@@ -342,7 +373,7 @@ for (index = 0; index < n_run; index++){  // runs
 						+ e.toString() + " ## RETRYING ##");
 					log.flush();
 					err_out = e;
-					not_done = true;
+					err_count += 1;
 					setup_n_err = setup_n_err + 1; 
 					continue;
 				}
@@ -369,7 +400,7 @@ for (index = 0; index < n_run; index++){  // runs
 						+ e.toString() + " ## RETRYING ##");
 					log.flush();
 					err_out = e;
-					not_done = true;
+					err_count += 1;
 					scan_start_n_err = scan_start_n_err + 1;
 					continue;
 				}
@@ -400,7 +431,7 @@ for (index = 0; index < n_run; index++){  // runs
 						+ e.toString() + "\n");
 					log.flush();
 					err_out = e;
-					not_done = true;
+					err_count += 1;
 				}
 				
 				datastore = datastore_array[0]; // we only have one camera
@@ -431,6 +462,7 @@ for (index = 0; index < n_run; index++){  // runs
 								"FAILED TO DELETE DATASTORE WITH ERROR " + errdel);
 							throw new Exception(
 								"FAILED TO DELETE DATASTORE WITH ERROR " + errdel);
+							err_count += 1;
 						}
 					}
 				}catch(Exception e){
@@ -438,7 +470,6 @@ for (index = 0; index < n_run; index++){  // runs
 						"Problem getting (any) images from camera, triggering problem?"
 							+ " Retrying field (" + (n_try) + ")");
 					sc.message("error: " + e.toString());
-					not_done = true;
 					err_out = e;
 					log.write("Failed somewhere freezing datastore with " 
 						+ e.toString() + "\n" );
@@ -446,7 +477,7 @@ for (index = 0; index < n_run; index++){  // runs
 					debug.write("Failed somewhere freezing datastore with " 
 						+ e.toString() + "\n" );
 					debug.flush();
-					not_done = true;
+					err_count += 1;
 					
 				}
 				timeEndSaving = System.currentTimeMillis();
@@ -464,16 +495,16 @@ for (index = 0; index < n_run; index++){  // runs
 						y_end[f], f_pos[f], debug, 50); // check end is correct
 					debug.write("Scan success");
 					debug.flush();
-					not_done = not_done && false; // && propagates a previous true
 				} catch (Exception e) {
 					log.write(log_fieldinfo + "End position error: " + e.toString() 
 						+ " ## RETRYING ##");
 					log.flush();
 					err_out = e;
-					not_done = true;
+					err_count += 1;
 					// don't continue, just let loop complete and retry
 					scan_end_n_err = scan_end_n_err + 1;
 				}
+				if (err_count == 0) not_done = false;
 				if (!not_done){
 				sc.message("Field " + f + " wavelength " + wavelengths[chan] 
 					+  "nm acquired!");
@@ -513,7 +544,52 @@ for (index = 0; index < n_run; index++){  // runs
 			f_pos[g],x_pos[g],y_bg[g],travel_speed,stageName,zStageName,movetimeout_s,debug);
 	} // field loop
 	sc.message("Run " + index +  " acquired!");	
-	time_end = System.currentTimeMillis();
+	sc.message("Now finding CoM of acquired volumes");
+
+	pos_com_tries = 0;
+	pos_com_success = false;
+
+	PositionList new_pos = mm.positions().getPositionList();
+	while(pos_com_tries < 3 && !pos_com_success){  // just hard code 3 attempts at this
+		try{
+			new_pos = update_pos_xy(savedir, index, "561", 2, trg_dist, 60, 50);
+			pos_com_success = true;
+		} catch (Exception e_pos){
+			sc.message("Failed to correct positions using CoM with " + e_pos.printStackTrace());
+			pos_com_tries++;
+		}
+	}
+	mm.positions().setPositionList(new_pos);
+	
+	if (pos_com_tries >= 3){
+		print("Failed 3 times in CoM position correction code, skipping");
+	}
+	// run coverslip detection
+	cslip_correction_tries = 0;
+	cslip_success = false;
+
+	while(cslip_correction_tries < 2 && !cslip_success){
+		try{
+			sc.message("running coverslip detection for " + n_pos_cslip + "wells"); 
+			live_coverslip_detection(cslip_dir, starting_z, max_z, n_pos_cslip, cslip_thresh, step_z);
+			mean_shift = apply_z_shift(cslip_dir, cslip_original_dir, 500, n_pos_cslip, true);
+			max_z += mean_shift;
+			starting_z += mean_shift;
+			cslip_success = true;
+		} catch (Exception e_cslip){
+			sc.message("Failed to correct Z drift with coverslip height with " + e_cslip.printStackTrace());
+			cslip_correction_tries++;
+		}
+	}
+	if (cslip_correction_tries >= 2){
+		print("Failed 3 times in Z drift correction code, skipping");
+	}
+	// now convert into positions...
+	int ret = convertCtr(f_pos,x_pos,y_bg,y_end,dist_from_ctr,dist_from_ctr);
+
+	
+	// time_end = System.currentTimeMillis();
+	long time_end = new Date().getTime();
 	delta_t = Math.max(0,Math.round((time_end - time_begin)/1000)); // seconds
 	sc.message("Total took " + delta_t + "s");		
 	// Delayed restart - wait until next scheduled run, don't wait in the last one
@@ -547,7 +623,8 @@ log.write(move_well_n_err + " moving to well error(s)\n");
 log.write(setup_n_err + " setting up scan error(s)\n");
 log.write(scan_start_n_err + " scan starting error(s)\n");
 log.write(scan_end_n_err + " scan end error(s)\n");
-log.write("Total fields**runs: " + n_fields*n_run);  
+log.write("Total fields: " + n_fields);  
+log.write("Total runs: " + n_run);  
 log.write(" Number of channels: " + fw_pos.length);
 log.flush();
 log.close();

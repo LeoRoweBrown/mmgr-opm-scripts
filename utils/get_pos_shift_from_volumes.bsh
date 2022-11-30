@@ -1,0 +1,39 @@
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+import org.micromanager.internal.utils.MMException;
+
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/update_pos_xy_after_timepoint.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/live_find_coverslip.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/apply_z_shift_cslip.bsh");
+
+mmc = mm.getCMMCore();
+sc = mm.getScriptController();
+
+pos_com_tries = 0;
+pos_com_success = false;
+
+trg_dist = 1.4;
+index = 1;
+savedir = "E:/nina/20220714_live_plate3/main_live6/22-07-25/02-09-44/";
+
+PositionList new_pos = mm.positions().getPositionList();
+while(pos_com_tries < 3 && !pos_com_success){  // just hard code 3 attempts at this
+	try{
+		new_pos = update_pos_xy(savedir, index, "561", 2, trg_dist, 60, 50);
+		pos_com_success = true;
+	} catch (Exception e_pos){
+		sc.message("Failed to correct positions using CoM with " + e_pos.printStackTrace());
+		pos_com_tries++;
+	}
+}
+// mm.positions().setPositionList(new_pos);

@@ -1,0 +1,150 @@
+// import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+import org.micromanager.internal.utils.MMException;
+import java.lang.Math;
+// import java.util.List;
+import java.lang.*;
+import java.util.*;
+
+min_z = -2000;
+max_z = 2000;
+step_z = 1000;  // maybe increase range
+exp = 20;
+
+travel_speed = 10;
+
+n_z = 5;
+step_z = (int)Math.floor((max_z - min_z)/(n_z));
+// n_z = (int)Math.floor((max_z - min_z)/(step_z));
+
+mmc = mm.getCMMCore();
+sc = mm.getScriptController();
+
+String zStageName = "ZAxis";
+// String zStageName = "ThorZDrive";
+String stageName = mmc.getXYStageDevice();
+String cam = "Andor"; 	
+String acq = "luca"; 
+mmc.initializeCircularBuffer();
+zspeed_mmps = Double.parseDouble(mmc.getProperty(zStageName, "SpeedZ [mm/s]"));
+timetotravel = step_z/zspeed_mmps;
+movetimeout_s = 30;  // timeout for stage travel
+
+mmc.setCameraDevice(cam);
+mmc.setExposure(exp);
+
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/libraries/camAcqControl.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/libraries/travelControl.bsh");
+
+PositionList pl = mm.positions().getPositionList();
+// pl = gui.getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+savename = "mrfp";
+
+savedir = "E:/nina/20220628_fixed_plate/mrfp_stack_andor/";
+
+int[] x1 = new int[n_pos];
+int[] y1 = new int[n_pos];
+int[] f1 = new int[n_pos];
+java.util.Arrays.fill(x1, 0);
+java.util.Arrays.fill(y1, 0);
+java.util.Arrays.fill(f1, 0);
+
+// saving f positions
+for (pos_i=0; pos_i<n_pos; pos_i++){
+	mp = pl.getPosition(pos_i);
+	x1[pos_i] = (int) Math.floor(mp.getX()); 
+	y1[pos_i] = (int) Math.floor(mp.getY());  
+	// f = mp.get(zStageName);
+	fz = mmc.getPosition(zStageName);
+	// if no ZAxis in the position list, get it from current value
+	// if (f != null){
+	// 	fz = f.x;
+	// }
+	f1[pos_i] = (int) Math.floor(fz);
+}
+
+DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
+Date date = new Date();
+
+savepath = savedir + dateFormat.format(date) + "/";
+
+new File(savepath).mkdirs();
+
+BufferedWriter out
+	= new BufferedWriter(new FileWriter(savepath + "parameters.txt"));
+out.write("exp ; " + exp + "\n");
+out.write("x_pos");
+	for(i = 0;i< n_pos;i++) { 	out.write(" ; " + x1[i]); }; 
+out.write("\n"+"y_pos");
+	for(i = 0;i< n_pos;i++) { 	out.write(" ; " + y1[i]); };
+out.write("\n"+"f_pos");
+	for(i = 0;i< n_pos;i++) { 	out.write(" ; " + f1[i]); };
+out.write("\n"+"min_z ; " + min_z);
+out.write("\n"+"max_z ; " + max_z);
+out.write("\n"+"step_z ; " + step_z);
+out.write("\n"+"n_z ; " + n_z);
+
+out.close();
+
+
+print("Starting");
+
+for (pos_i=0; pos_i<n_pos; pos_i++){
+	
+	sc.message("Position " + pos_i);
+
+	// timetotravel = step_z/zspeed_mmps;
+	full_traveltime = (max_z - min_z)/zspeed_mmps + 50;
+	z = f1[pos_i] + max_z;  // starting z
+	print("starting z "+ z);
+	print("ending z " + (f1[pos_i] + min_z));
+	// mmc.setPosition(zStageName,z);
+	
+	travelToPositionRetry(
+		z, x1[pos_i], y1[pos_i], travel_speed, stageName, zStageName, movetimeout_s);
+
+	full_dir = savepath + "field_" +  pos_i + "/" + savename + "/";
+	datastore = mm.data().createMultipageTIFFDatastore(full_dir, false, false);
+
+	// Thread.sleep((int)full_traveltime);
+	print("made datastore");
+	Coords.Builder coordsBuilder = Coordinates.builder();
+
+	// Z scanning
+	for (n=0; n<n_z; n++){
+		// z = f1 + n*step_z + min_z;
+		//print("here");
+		// print(z);
+		mmc.setPosition(zStageName,z);
+		Thread.sleep(25);
+		Thread.sleep((int)timetotravel);
+		// mmc.clearCircularBuffer();
+		
+		// TaggedImage img = mmc.popNextTaggedImage();	
+		// Image tmp = mm.data().convertTaggedImage(img);
+		images = mm.live().snap(false);
+		image = images.get(0);
+		coordsBuilder = coordsBuilder.p(n);
+		tmp = image.copyAtCoords(coordsBuilder.build());
+		datastore.putImage(tmp);
+		z -= step_z;
+		
+	}
+	
+	
+	datastore.freeze();
+	datastore.close();
+}
+travelToPositionRetry(
+	f1[0], x1[0], y1[0], travel_speed, stageName, zStageName, movetimeout_s);

@@ -11,6 +11,8 @@ import org.micromanager.data.Coords;
 import org.micromanager.data.Coordinates;
 import org.micromanager.internal.utils.MMException;
 
+int run_opm_acquisition(savedir, parameters){
+
 source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
 
 mmc = mm.getCMMCore();
@@ -30,9 +32,19 @@ port_xy = "COM1";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
+// input parameters:
+// savedir
+// -- scan parameters --
+// 
+// scan_speed
+// exposures
+// dist_from_ctr
+// 
+// trg_dist
+
+
 // savedir = "E:/nina/prefind_test_20220609/main/" + dateFormat.format(date) + "/";
-savedir = "E:/nina/slow_z/main/" + dateFormat.format(date) + "/";
-// savedir = "E:/nina/20220426_fixed_square/background/" + dateFormat.format(date) + "/";
+savedir = savedir + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -51,34 +63,26 @@ sc.message("Successfully cleaned up");
 /////////////////////////////////////////////////////////////////////
 
 // General parameters
-	trg_dist = 1.4; //trigger distance in micron
-	double travel_speed = 10;  // travel speed mms/(?)
-	double scan_speed = 0.1; //0.01;/  // scan speed mm/s(?)
-	// double[] scan_speeds = {0.15; 0.1; 0.15; 0.15;}
-	dist_from_ctr = 200;  // half of the total scan distance in um
-	movetimeout_s = 60;  // timeout for stage travel
-	scan_tries = 3;  // general retry count until skipping field
-	max_retries = 3;  // maximum number of retries before skipping
-	max_field_skips = 3; // maximum skips per run before stopping
-	max_dropped_frames = 1; // maximum dropped frames
+	trg_dist = parameters.trg_dist; //trigger distance in micron
+	double travel_speed = parameters.travel_speed;  // travel speed mm/s
+	double scan_speed = parameters.scan_speeds  // scan speed mm/s
+	dist_from_ctr = parameters.dist_from_ctr;  // half of the total scan distance in um
+	movetimeout_s = parameters.movetimeout_s;  // timeout for stage travel
+	scan_tries = parameters.scan_tries;  // general retry count until skipping field
+	max_retries = parameters.max_retries;  // maximum number of retries before skipping
+	max_field_skips = parameters.max_field_skips; // maximum skips per run before stopping
+	max_dropped_frames = parameters.max_dropped_frames; // maximum dropped frames
 
 	filter_naming = true;
-	// REMEMBER TO CHANGE THIS!!!
 	test_mode = false; // delete files after acquiring
 	unset("z_offset");
 	z_offset = 0;//-100000;
 	y_offset = 0;
 
-	// under sample plate
-	// undersample_row_number = 5;
-	// undersample_col_factor = 5;
-	// cols = 
-
 // Time-lapse parameters 
-	n_run = 20;
-	// n_run = 1;
-	run_interval = 20; // in minutes
-	first_run =0; // 0-indexing
+	n_run = parameters.n_run;
+	run_interval = parameters.run_interval; // in minutes
+	first_run = 0; // 0-indexing
 
 // Saving parameters
 	save_type = 1;
@@ -93,12 +97,11 @@ sc.message("Successfully cleaned up");
 // (count from 0)
 unset("fw_pos");
 
-int[] fw_pos = {2}; // {3}; // //
-int[] las_channels =  {2}; //{1};//;  // DAQ channels corresponding to each fw pos
-int[] wavelengths = {457, 515, 561, 642};
-// int[] wavelengths =  {488, 515, 561, 642};
-float[] amplitudes = {5};// // {1};
-int[] exposures  =  {5};//
+int[] fw_pos =  parameters.fw_pos;
+int[] las_channels =  parameters.las_channels; // DAQ channels corresponding to each fw pos
+int[] wavelengths =   parameters.wavelengths;
+float[] amplitudes =  parameters.amplitudes;
+int[] exposures  =    parameters.exposures;
 
 /////////////////////////////////////////////////////////////////////
 
@@ -190,8 +193,11 @@ out.write("\n" + "fw_pos");
 	for(i = 0;i< fw_pos.length;i++) {
 	out.write(" ; " + fw_pos[i]); 
 } 
-out.write("\n" + "scan_speed ; " + scan_speed + "\n");
-out.write("travel_speed ; " + travel_speed + "\n");
+out.write("\n" + "scan_speeds");
+	for(i = 0;i< scan_speeds.length;i++) { 	
+	out.write(" ; " + scan_speeds[i] ); 
+};
+out.write("\n travel_speed ; " + travel_speed + "\n");
 out.write("x_pos");
 	for(i = 0;i< n_fields;i++) { 	out.write(" ; " + x_pos[i]); }; 
 out.write("\n y_bg");

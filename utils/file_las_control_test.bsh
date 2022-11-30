@@ -1,0 +1,23 @@
+// laser control test
+// writeToFile("E:/acquisition control files/las_control.txt", "4,0.1");
+import ij.process.ImageProcessor ;
+import org.micromanager.data.Image;
+import ij.ImageStack;
+import ij.ImagePlus;
+import ij.IJ;
+
+images = mm.live().snap(false);
+image = images.get(0);
+iProcessor = mm.data().ij().createProcessor(image);
+imgplus = new ImagePlus("coverslip", iProcessor);
+
+imgplus.show();
+
+
+IJ.run(imgplus,"Rotate 90 Degrees Left", ""); 
+// IJ.run("Measure", imgplus);
+IJ.run(imgplus, "Auto Threshold", "method=Otsu white show");
+
+imgplus.show();
+
+// IJ.runMacroFile("C:\\Users\\OPMuser\\Documents\\micromanager\\mmgr-opm-scripts\\utils\\test_macro.ijm");

@@ -56,6 +56,26 @@ int setUpStageRetry(port,trg_dist,scan_speed,max_tries,logbuffer){
 	return 0;
 }
 
+// faster functions (hopefully)
+/*int setTriggerRetry(port,trig,max_tries){
+	success = false;
+	trigstr = trig + "";
+	tries = 1;
+	while(!success){
+		try{
+			mmc.setSerialPortCommand("COM1","!trig 1","\r"); 
+			mmc.setSerialPortCommand(port,"?trig","\r");
+			trigger = mmc.getSerialPortAnswer(port, "\r");
+			if ( !trigger.equals(trigstr) ){
+				throw new MMException("Trigger not set, attempted to set to " + trigstr);
+			}
+		tries++;
+		waittime = 10000*tries;
+		if (waittime > 60000) waittime = 60000;  // max wait time
+}
+
+int setSpeedRetry() */
+
 int initialiseStage(port, trg_dist, timeout, logbuffer){
 	trigger_dist_dub = -1.0;  // -1 so always wrong at first
 	start = System.currentTimeMillis();
@@ -129,6 +149,11 @@ int initialiseStage(port, trg_dist, logbuffer){
 	return initialiseStage(port, trg_dist, 10000, logbuffer);
 }
 
+int initialiseStage(port, trg_dist){
+	// default 10s timeout
+	return initialiseStage(port, trg_dist, 10000, null);
+}
+
 int setUpStageRetry(port,trg_dist,scan_speed,max_tries){
 	// version without logging
 	return setUpStageRetry(port,trg_dist,scan_speed,max_tries,null);
@@ -139,19 +164,63 @@ int setUpFocus() {  // remove?
 	return 0;
 }
 
-int waitForZnew() {
-	// print("hereZ");
-	mmc.setSerialPortCommand("COM4","!statusaxis","\r"); 
+int waitForZnew(timeout) {
+	// Isn't working properly? getting a move signal too quickly
+	// Fixed by !statusaxis -> ?statusaxis z (was giving the 3 axes and missing "M")
+	// print("in WaitForZnew");
+	start_time = System.currentTimeMillis();
+	time = 0;
+	
+	mmc.setSerialPortCommand("COM4","?statusaxis z","\r"); 
 	status = mmc.getSerialPortAnswer("COM4","\r"); 
-	while(status.charAt(0) == 'M' || status.charAt(1) == 'M') {
-		mmc.setSerialPortCommand("COM4","!statusaxis","\r"); 
-		status = mmc.getSerialPortAnswer("COM4","\r"); 
-		Thread.sleep(100);  // 10 Hz polling rate
-	}	
+
+	while(status.charAt(0) == 'M' && time < timeout) {
+		time = System.currentTimeMillis() - start_time;
+		// print("status:" + status);
+		mmc.setSerialPortCommand("COM4","?statusaxis z","\r"); 
+		Thread.sleep(50);  // 10 Hz polling rate
+		status = mmc.getSerialPortAnswer("COM4","\r");
+	}
+	time = System.currentTimeMillis() - start_time;
+	if (time > timeout){
+		throw new MMException("Timed out moving Z (timeout=" + timeout + "ms)");
+	}
+	// print("Z move finished signal recieved in " + time + "ms");
 	return 0;
 }
 
-int fastMoveZ(stageName, aim_z_pos, travel_speed){
+int waitForZnew() {
+	waitForZnew(10000);
+}
+
+
+int setZPositionQuick(zStageName, z, blocking){
+	timeout = 10000;
+	time0 = System.currentTimeMillis();
+	time = 0;
+	moved = false;
+	ret = 1;
+	while(!moved && time < timeout){
+		try {
+			mmc.setPosition(zStageName, z);
+			if (blocking) waitForZnew();
+			ret = 0;
+			moved = true;
+		} catch(Exception ex) {
+			moved = false;
+			sc.message("z failed to move, retrying");
+		}
+		time = System.currentTimeMillis() - time0;
+	}
+	return ret;
+}
+
+int setZPositionQuick(zStageName, z){
+	return setZPositionQuick(zStageName, z, true);
+}
+	
+int setZPositionNonBlocking(zStageName, z){
+	return setZPositionQuick(zStageName, z, false);
 }
 
 int waitForStageZ(stageName, aim_z_pos, travel_speed, fudge) {
@@ -171,7 +240,7 @@ int waitForStageZ(stageName, aim_z_pos, travel_speed){
 	
 
 int waitForXY() {
-	mmc.setSerialPortCommand("COM1","!statusaxis","\r"); 
+	mmc.setSerialPortCommand("COM1","?statusaxis","\r"); 
 	status = mmc.getSerialPortAnswer("COM1","\r"); 
 	while(status.charAt(0) == 'M' || status.charAt(1) == 'M') {
 		mmc.setSerialPortCommand("COM1","!statusaxis","\r"); 
@@ -201,7 +270,8 @@ int coreTravelNoWait(cur_z_pos,aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageN
 		mmc.setXYPosition(stageName,aim_x_pos,aim_y_pos);
 		mmc.setPosition(zStageName,aim_z_pos);
 	}	
-	waitForStage(stageName,aim_x_pos,aim_y_pos,travel_speed);
+	// 2022/05/13 LRB waitForStage not needed because waitForXY and waitForZnew
+	// waitForStage(stageName,aim_x_pos,aim_y_pos,travel_speed); 
 	waitForXY();
 	waitForZnew();
 	return 0;
@@ -243,16 +313,18 @@ int generalTravel(aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageNam
 	
 	// sc.message("Getting positions");
 	cur_z_pos = mmc.getPosition(zStageName);	
-	if (wait == 0)
+	if (wait == 0){
 		coreTravelNoWait(cur_z_pos,aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName);
-	else
+	}
+	else {
 		 coreTravelWait(cur_z_pos,aim_z_pos,aim_x_pos,aim_y_pos,travel_speed,stageName,zStageName);
-	Thread.sleep(1000);
+	}
+	// Thread.sleep(1000); // REMOVED lrb 12/05/22, explicit waiting happens in coreTravelWait
 	cur_x_pos = mmc.getXPosition(stageName);
 	cur_y_pos = mmc.getYPosition(stageName);
 	cur_z_pos = mmc.getPosition(zStageName);
 	// sc.message("Get positions");
-	sc.message("Move result: "+ (cur_z_pos - aim_z_pos) + " " + (cur_x_pos - aim_x_pos) + " " + (cur_y_pos - aim_y_pos));
+	// sc.message("Move error result: "+ (cur_z_pos - aim_z_pos) + " " + (cur_x_pos - aim_x_pos) + " " + (cur_y_pos - aim_y_pos));
 	travel_end = System.currentTimeMillis();
 	travel_t = Math.max(0,Math.round((travel_end - travel_begin))); // ms
 	sc.message("Travel took " + travel_t + "ms");			

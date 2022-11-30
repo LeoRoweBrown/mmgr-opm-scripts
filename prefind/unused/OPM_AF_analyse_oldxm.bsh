@@ -1,0 +1,207 @@
+// open("C:\\Users\\OPMuser\\Desktop\\DELETEME2\\MMStack_Default.ome.tif");
+// run("Duplicate...", "duplicate");
+
+import ij.plugin.Duplicator;
+
+int[] find_spheroid_z(ImagePlus imp, int min_otsu_thresh, boolean use_otsu, boolean xy_com, String savedir){
+	// if use_otsu = false, we compute manual threshold
+	
+	comY = 0;
+	comX = 0;
+	
+	// do we need to think about mag being squared here for xz plane?
+	mag = 20.4*1.34;  // 20.4 number calculated somewhere...
+	px_size_um = 6.5;
+	z_relative = 0;
+	pixels_from_bottom = 100;
+	
+	err_code = 2;
+	
+	fi = imp.getOriginalFileInfo();  // need original file info apparently
+	h = imp.getHeight();
+	w = imp.getWidth();
+	nSlices = imp.getNSlices();
+	
+	y_spacing = fi.pixelDepth;
+	print("y spacing: " + y_spacing + "um");
+
+	IJ.run(imp, "Rotate 90 Degrees Left", "");
+
+
+	imp.setRoi(8, 0, 992, 1280);  // do processing on imp2, keep imp
+	imp.crop();
+	
+	IJ.run("Set Measurements...", "mean min max redirect=None");
+	IJ.run(imp, "Measure", "");
+	rt = ResultsTable.getResultsTable();
+	// some extra help subtracting mean, help with otsus if used
+	stack_mean = rt.getValue("Mean",0);
+	IJ.run(imp, "Subtract...", "value="+stack_mean);
+	
+	IJ.saveAs(imp, "Tiff", savedir+"/stack.tif");
+	
+	imp2 = new Duplicator().run(imp);
+
+	// print(imp2);
+
+	IJ.run(imp2, "Z Project...", "projection=[Max Intensity]");
+	// unfortunately can't avoid the Z project appearing in new window,
+	// is there a workaround? Means I have to use getImage.
+	imp2.close();
+	imp2 = IJ.getImage();
+	
+	imp2.setRoi(0, 0, 992, 1280);
+
+	IJ.run("Clear Results");
+	IJ.run("Set Measurements...", "mean min max redirect=None");
+	IJ.run(imp2, "Measure", "");
+
+	min = rt.getValue("Min",0);
+	
+	found = false;
+	
+	if (!use_otsu){  // manual threshold method
+		// IJ.run(imp2, "Manual Threshold...", "min="+min_otsu_thresh+" max=65535");
+		// IJ.run(imp2, "Convert to Mask", "");
+		// IJ.run(imp2, "Invert LUT", "");
+		IJ.setRawThreshold(imp2, min_otsu_thresh, 65535, null);
+			
+		IJ.run(imp2, "Convert to Mask", "");
+		IJ.run(imp2, "Invert LUT", "");
+		
+		IJ.run(imp2, "Dilate", "");
+		IJ.run("Clear Results");
+		IJ.run(imp2, "Measure", "");
+		max = rt.getValue("Max",0);
+		if (max > 0) found = true;
+		
+	} else {
+		IJ.run(imp2, "Auto Threshold", "method=Otsu white show");
+		IJ.run(imp2, "Dilate", "");
+	
+		logString = IJ.getLog();
+		logArray = logString.split("\n");
+		otsustr = logArray[logArray.length-1];
+		otsu_val = otsustr.split(": ");
+		otsu_val_int = Integer.parseInt(otsu_val[1]);
+
+		// print(min_otsu_thresh);
+		if (otsu_val_int-min < min_otsu_thresh){
+			print("not found, otsu thresh minus min is: " + (otsu_val_int-min));
+		} else { found = true; }
+	}
+	if (!found){ 
+		imp.changes = false;
+		imp2.changes = false;
+		// IJ.saveAs(imp, "Tiff", savedir+"/stack_otsu.tif");
+		IJ.saveAs(imp2, "Tiff", savedir+"/mip_otsu.tif");
+		imp.close();
+		imp2.close();
+		return new int[]{z_relative, comX, comY, 1};  // error code 1
+	}
+	// print("dilated");
+	imp2.setRoi(0, 0, 992, 1280);
+	IJ.run("Clear Results");
+	pp = new ProfilePlot(imp2);
+	profile = pp.getProfile();
+
+	y_from_bottom = -1;
+
+	for (i=0; i<profile.length; i++){
+		// print("value: " + profile[profile.length-i-1]);
+		if (profile[profile.length-i-1] > 1) {
+			y_from_bottom = i;
+			print("found: " + (profile.length-i-1) + "px");
+			break;
+		}
+	}
+
+	if (y_from_bottom >= 0) {
+		err_code = 0;
+		// we actually leave a few pixels
+		y_from_bottom -= pixels_from_bottom;
+		// convert z from px
+		z_relative = - (px_size_um * y_from_bottom * Math.sin(35*Math.PI/180)/mag);
+		// negative because means to move objective up
+	}
+
+	// do CoM find to improve y and x //
+	if (err_code == 0 && xy_com){
+		// can do x with the MIP
+		IJ.run("Clear Results");
+		IJ.run("Set Measurements...", "mean min max center redirect=None");
+		IJ.run(imp2, "Measure", "");  // measure CoM of otsu of MIP projection (imp2)
+		rt = ResultsTable.getResultsTable();
+		comX = rt.getValue("YM",0);  // we rotated our image, so YM.
+		middle_x = w/2;
+		comX = comX - middle_x;  // need to work out signs of this shift in stage coords
+		print("comX in pixels: " + comX);
+		// y needs to look at stack
+		// 
+		// IJ.run("Clear Results");
+		// IJ.run("Set Measurements...", "mean min max center redirect=None");
+		// IJ.run(imp, "Measure", "");
+		// some extra help subtracting threshold, hopefully avoid well fluorescence
+		// otsu seems to remove well fluorescence
+		IJ.run(imp, "Auto Threshold", "method=Otsu white setthreshold show stack use_stack_histogram");
+		
+		logString = IJ.getLog();
+		logArray = logString.split("\n");
+		otsustr = logArray[logArray.length-1];
+		otsu_val_stack = otsustr.split(": ");
+		otsu_val_stack_int = Integer.parseInt(otsu_val_stack[1]);
+		print("subtracting " + otsu_val_stack_int);
+		IJ.run(imp, "Subtract...", "value="+otsu_val_stack_int);  // easiest way to "threshold mask"
+
+		IJ.run("Clear Results");
+		IJ.run("Set Measurements...", "mean min max center redirect=None");
+		// int[] sum_z = new int[nSlices];
+		y_times_value = 0;
+		sum_value = 0;
+		IJ.run("Clear Results");
+		
+		for (y = 0; y < nSlices; y++){
+			imp.setSlice(y+1);
+			IJ.run(imp, "Measure", "");
+			value = rt.getValue("Mean", y);
+			sum_value += value;
+			y_times_value += y*value;
+		}
+		comY = y_times_value/sum_value;
+		middle_y = nSlices/2;
+		comY -= middle_y;  // need to work out signs of this shift in stage coords
+		print("comY in pixels: " + comY);
+		comY *= y_spacing;  // get real distances
+		print("comY in um: " + comY);
+		// important!! correct y shift because of skewed geometry
+		print("z relative " + z_relative);
+		// 0.1 to undo the *10 used from marz encoding, we want it in z
+		comY += (z_relative/Math.tan(35*Math.PI/180));
+		print("comY after geom: " + comY);
+		///---------
+		
+		comX *= px_size_um/mag;
+		print("comX in um: " + comX);
+	}
+	
+	if (!savedir.equals("")){
+		IJ.saveAs(imp, "Tiff", savedir+"/stack_otsu.tif");
+		IJ.saveAs(imp2, "Tiff", savedir+"/mip_otsu.tif");
+	}
+	imp.changes = false;
+	imp2.changes = false;
+	imp.close();
+	// IJ.run("Close All", "");  // because it wants to keep the Z proj so badly
+	imp2.close(); // probably lost in scope anyway 
+	// 10 because encoded in  1um -> 0.1um for some reason in marzhauser
+	z_relative *= 10;
+	return new int[]{z_relative, comX, comY, err_code};
+}
+
+int[] find_spheroid_z(ImagePlus imp, int min_otsu_thresh){
+	return find_spheroid_z(imp, min_otsu_thresh, false, "");
+}
+
+int[] find_spheroid_z(ImagePlus imp, int min_otsu_thresh, boolean xy_com){
+	return find_spheroid_z(imp, min_otsu_thresh, xy_com, "");
+}

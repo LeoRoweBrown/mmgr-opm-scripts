@@ -1,0 +1,39 @@
+// undersampling tool for postfind
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.Arrays;
+
+sparse_platemap = "E:/postfind/platemap_sparse.xls";
+	
+	Pattern row_pattern = '(?<=Row[-\s])[A-Z]+';
+	Pattern col_pattern = '(?<=Column[-\s])[0-9]+';
+
+	PositionList pl = mm.positions().getPositionList();
+	n_pos = pl.getNumberOfPositions();
+
+	int[] col = new int[n_pos];
+	int[] row = new int[n_pos];
+
+	for(n=0; n<n_pos; n++){
+		Matcher row_m = row_pattern.matcher(pl[n].label);
+		Matcher col_m = col_pattern.matcher(pl[n].label);
+		
+		row_str = row_m.group(1);
+		col_str = col_m.group(1);
+		
+		col[n] = Integer.parseInt(col_str);
+		row[n] = (int)row_str - (int)'A' + 1;
+	}
+	sort_col = Arrays.sort(col);
+	sort_row = Arrays.sort(row);
+	
+	for(n=0; n<n_pos; n+=){
+	
+	for row_count
+
+	row_list_regx = regexp(pos_labels_join, '(?<=Row[-\s])[A-Z]+', 'match');
+	col_list_regx = regexp(pos_labels_join, '(?<=Column[-\s])[0-9]+', 'match');
+
+	return 
+}

@@ -1,0 +1,97 @@
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.navigation.MultiStagePosition;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+import org.micromanager.internal.utils.MMException;
+import java.util.List;
+
+////////////////////// USER SETTINGS //////////////////////
+
+min_z = -100;
+max_z = 100;
+step_z = 5;
+
+///////////////////////////////////////////////////////////
+
+n_z = (int)Math.floor((max_z - min_z)/(step_z));
+
+mmc = mm.getCMMCore();
+sc = mm.getScriptController();
+
+String zStageName = "ZAxis";
+// String zStageName = "ThorZDrive";
+String stageName = mmc.getXYStageDevice();
+String led = "505"; 	
+mmc.initializeCircularBuffer();
+zspeed_mmps = Double.parseDouble(mmc.getProperty(zStageName, "SpeedZ [mm/s]"));
+
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/libraries/camAcqControl.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/libraries/travelControl.bsh");
+
+PositionList pl = mm.positions().getPositionList();
+// pl = gui.getPositionList();
+nfields = pl.getNumberOfPositions();
+
+mp = pl.getPosition(0);
+x1 = (int) Math.floor(mp.getX()); 
+y1 = (int) Math.floor(mp.getY());  
+f1 = (int) Math.floor(mp.getZ());
+
+
+savedir = "C:/Users/OPMuser/Documents/polarisation_change/zbeads_afterclean_old_objective/";
+
+for (i=0; i < nfields; i++){
+	MultiStagePosition.goToPosition(pl.getPosition(i), mmc);
+	// print("making datastore");
+	full_dir = savedir + led + "/";
+	
+	File dir = new File(full_dir);
+	j=1;
+	while(dir.isDirectory()){
+		full_dir =  savedir + led + "_" + j + "/";
+		j = j+1;
+		dir = new File(full_dir);
+	}
+	full_dir_field = full_dir + "field_" + i;
+	datastore = mm.data().createMultipageTIFFDatastore(full_dir_field, false, false);
+	
+	timetotravel = step_z/zspeed_mmps;
+	z = f1 + min_z;
+	mmc.setPosition(zStageName,z);
+	Thread.sleep(3000);
+	
+	
+	print("made datastore");
+	Coords.Builder coordsBuilder = Coordinates.builder();
+	// mmc.prepareSequenceAcquisition(cam);
+	// mmc.startSequenceAcquisition(cam,n_z,0,false);
+	print("here before loop");
+	for (n=0; n<n_z; n++){
+		z = f1 + n*step_z + min_z;
+		print("here");
+		mmc.setPosition(zStageName,z);
+		timetotravel = step_z/zspeed_mmps;
+		Thread.sleep(50);
+		Thread.sleep((int)timetotravel);
+		// mmc.clearCircularBuffer();
+		
+		// TaggedImage img = mmc.popNextTaggedImage();	
+		// Image tmp = mm.data().convertTaggedImage(img);
+		images = mm.live().snap(true);
+		image = images.get(0);
+		coordsBuilder = coordsBuilder.p(n);
+		tmp = image.copyAtCoords(coordsBuilder.build());
+		datastore.putImage(tmp);
+	}
+	
+	datastore.freeze();
+	datastore.close();
+}

@@ -1,0 +1,6 @@
+// DIAGNOSE SCRIPT
+// Recommended to run this before an acquisition:
+// - Checks the focus score on the widefield camera
+// - Checks for extreme Z axis values
+// - Checks for empty field of views
+// - Will tell you what fields to look at and what issues they might have

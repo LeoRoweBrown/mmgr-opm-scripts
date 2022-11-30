@@ -1,0 +1,208 @@
+import ij.ImageStack;
+import ij.ImagePlus;
+
+ImagePlus acqImagesFromBufferImgplus(nimgs, timeout, max_dropped){
+	print("grabbing frames");
+	
+	ImageStack stack;
+	ImagePlus imgplus;
+	
+	TicToc=timeout;
+	HangExit=0;
+	// acquired_success = false;
+	
+	Tic=System.currentTimeMillis();
+	curFrame = 0;
+	
+	cb = mm.data().getCoordsBuilder().z(0).c(0).p(0).t(0);
+	while(curFrame < nimgs && HangExit == 0){
+		Toc=System.currentTimeMillis();
+
+		if ( ( Toc-Tic ) < TicToc ) {
+			if (mmc.getRemainingImageCount() > 0) {
+				tagged = mmc.popNextTaggedImage();
+				// Convert to an Image at the desired channel.
+				cbuild = cb.z(curFrame).c(0).p(0).t(0).build();
+				image = mm.data().convertTaggedImage(tagged, 
+						 cbuild, null);
+
+				iProcessor = mm.data().ij().createProcessor(image);           
+
+				if (curFrame == 0){
+					imgplus = new ImagePlus("z_stack", iProcessor);
+					stack = imgplus.getImageStack();
+				}
+				else stack.addSlice(iProcessor);
+				// stack.addSlice(iProcessor);
+				curFrame++;
+				Tic=System.currentTimeMillis();
+			} else { mmc.sleep(5); }
+		} else {
+			print("warning, timeout reached in acq, " + (curFrame+1) + "/" + nimgs + " images acquired");
+			HangExit = 1;
+		}
+	}
+	// do imageJ stuff for prefind
+	imgplus.setStack(stack);
+	return imgplus;
+}
+
+ImagePlus acqImagesNoTriggerImgplus(nimgs, img_time_intervals){
+	cb = mm.data().getCoordsBuilder().z(0).c(0).p(0).t(0);
+	
+	int curFrame = 0;
+
+	ImageStack stack;
+	ImagePlus imgplus;
+
+	while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+	   if (mmc.getRemainingImageCount() > 0) {
+		  Toc=System.currentTimeMillis();
+		  tagged = mmc.popNextTaggedImage();
+		  // Convert to an Image at the desired channel.
+		  cbuild = cb.z(curFrame).c(0).p(0).t(0).build();
+		  image = mm.data().convertTaggedImage(tagged, 
+					 cbuild, null);
+
+			iProcessor = mm.data().ij().createProcessor(image);           
+		  
+			if (curFrame == 0){
+				imgplus = new ImagePlus("z_stack", iProcessor);
+				stack = imgplus.getImageStack();
+			}
+			else stack.addSlice(iProcessor);
+			// stack.addSlice(iProcessor);
+		  curFrame++;
+		  Tic = System.currentTimeMillis() - Toc;
+		  Thread.sleep((int)(img_time_intervals - Tic));
+	   }
+	   else { mmc.sleep(5); }
+	}
+	// do imageJ stuff for prefind
+	imgplus.setStack(stack);
+	return imgplus;
+}
+
+
+/* ImagePlus acqImagesFromBufferImageplus(camNames, coordsBuilder, max_dropped, logbuffer){
+	// only works on one camera right now
+	int curFrame = 0;
+
+	ImageStack stack;
+	ImagePlus imgplus;
+	while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+	   if (mmc.getRemainingImageCount() > 0) {
+		  tagged = mmc.popNextTaggedImage();
+		  // Convert to an Image at the desired channel.
+		  cbuild = cb.z(curFrame).c(0).p(0).t(0).build();
+		  image = mm.data().convertTaggedImage(tagged, 
+					 cbuild, null);
+
+			iProcessor = mm.data().ij().createProcessor(image);           
+		  
+			if (curFrame == 0){
+				imgplus = new ImagePlus("z_stack", iProcessor);
+				stack = imgplus.getImageStack();
+			}
+			else stack.addSlice(iProcessor);
+			// stack.addSlice(iProcessor);
+		  curFrame++;
+	   }
+	   else { mmc.sleep(5); }
+	}
+	imgplus.setStack(stack);
+	return imgplus;
+} 
+
+ImagePlus acqImagesFromBufferImgplus(nimgs, timeout, max_dropped, logbuffer){
+	// for one cam
+	print("
+	cb = mm.data().getCoordsBuilder().z(0).c(0).p(0).t(0);
+
+	TicToc=timeout;
+	HangExit=0;
+	acquired_success = false;
+	
+	Tic=System.currentTimeMillis();
+	total_images_missing = 0;  // total missing frames
+	
+	ImageStack stack;
+	ImagePlus imgplus;
+	
+	curFrame = 0;
+	sc.message("Grabbing frames");
+	// while all frames (- max_dropped)
+	while(!acquired_success && HangExit == 0) {
+		Toc=System.currentTimeMillis();
+
+		if ( ( Toc-Tic ) < TicToc ) 
+		{
+			if (mmc.getRemainingImageCount() > 0) {
+				TaggedImage img = mmc.popNextTaggedImage();	
+				camName = img.tags.getString("Camera");
+				// print("cam name = " + camName);
+				  
+				// Convert to an Image at the desired channel.
+				cbuild = cb.z(curFrame).c(0).p(0).t(0).build();
+				image = mm.data().convertTaggedImage(img, 
+					cbuild, null);
+
+				iProcessor = mm.data().ij().createProcessor(image);           
+				  
+				if (curFrame == 0){
+					imgplus = new ImagePlus("z_stack", iProcessor);
+					stack = imgplus.getImageStack();
+				}
+				else stack.addSlice(iProcessor);
+				print(curFrame);
+				curFrame++;
+				Tic=System.currentTimeMillis();
+			}		
+		} else {
+			sc.message("Reached acq time limit");
+			HangExit=1;
+		}
+		/////////////////////////////////////////////////////
+		// Are all images acquired?
+		total_images_missing = 0;
+		errmsg = "";
+		total_images_missing = nimgs - curFrame;
+		if (total_images_missing == 0){
+			acquired_success = true;
+		}
+	}
+	// Idea is that it waits until all expected images are obtained, but if it times out
+	// it allows a max total number of dropped frames (max_dropped)
+	print("Checking for dropped frames");
+	// check for dropped frames
+
+	images_missing = nimgs - curFrame;
+	if (logbuffer != null) {
+		logbuffer.write("dropped :" + images_missing + " ");
+		logbuffer.flush();
+	}
+	if (images_missing > 0){  // if there aren't enough frames
+		if (images_missing > max_dropped){ // if the missing frames exceed the max allowed
+			print("Acquisition hanged and exceeded max dropped frames (" + images_missing + "/" + max_dropped + ")");
+			if (logbuffer != null) logbuffer.write(" (ERROR) max: " + max_dropped + "\n");
+			if (logbuffer != null) logbuffer.flush();
+				throw new MMException("Exceeded max frames");
+		} else {
+			sc.message("WARNING: Acquired with " + total_images_missing + " dropped frames");
+		}
+	}
+	
+	if (logbuffer != null) logbuffer.write("\n");
+	if (logbuffer != null) logbuffer.flush();
+	
+	imgplus.setStack(stack);
+	return imgplus;
+}
+
+ImagePlus acqImagesFromBufferImgplus(nimgs, timeout, max_dropped){
+	return acqImagesFromBufferImgplus(nimgs, max_dropped, null);
+}
+
+ImagePlus acqImagesFromBufferImgplus(nimgs, timeout){
+	return acqImagesFromBufferImgplus(nimgs, timeout, 0, null);
+}*/

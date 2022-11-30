@@ -1,0 +1,7 @@
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/libraries/stripedAcq.bsh");
+
+double[] params = {35.0, 0.1};
+savedir = "E:/riglar/20220531_gut_fixed_no_mvenus/";
+
+new File(savedir).mkdirs();
+posarray = convertCtrStripesSnake(params, savedir);

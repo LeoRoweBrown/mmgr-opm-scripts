@@ -138,8 +138,8 @@ PositionList generateStripesPosXZ(double px_size, int img_width, int img_height,
 	// now compute the new pos list for x and z
 	
 	// Extent of light sheet converted to sample coords, we just ignore y 
-	float sheet_fov_x = img_height*px_size;
-	float sheet_fov_z = img_width*px_size*Math.sin(Math.PI/180.0 * opm_angle);
+	float sheet_fov_x = img_width*px_size;  // FIXED RECENTLY 
+	float sheet_fov_z = img_height*px_size*Math.sin(Math.PI/180.0 * opm_angle);
 
 	// get range 
 	int x_range = max_pos[0] - min_pos[0];

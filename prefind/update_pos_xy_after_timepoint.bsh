@@ -1,0 +1,157 @@
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+import org.micromanager.internal.utils.MMException;
+import org.micromanager.PositionList;
+import org.micromanager.data.DataProvider;
+import ij.process.ImageProcessor ;
+import org.micromanager.data.Image;
+import ij.ImageStack;
+import ij.ImagePlus;
+import ij.IJ;
+import ij.measure.ResultsTable;
+import ij.gui.ProfilePlot;
+import ij.plugin.ImageCalculator;
+import ij.plugin.filter.Analyzer;
+import ij.io.FileInfo;
+
+
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/get_rows_and_cols.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/find_spheroid_xycom.bsh");
+
+PositionList update_pos_xy(String savedir, int index, String wavelength, int fw, double trg_dist,
+	int maxX, int maxY){
+		n_pos =  mm.getPositionList().getNumberOfPositions();
+		int[] ignore_position_idx = new int[n_pos];
+		java.util.Arrays.fill(ignore_position_idx, 0);
+
+		return update_pos_xy(savedir, index, wavelength, fw, trg_dist, maxX, maxY, ignore_position_idx);
+}
+
+PositionList update_pos_xy(String savedir, int index, String wavelength, int fw, double trg_dist,
+	int maxX, int maxY, ignore_position_idx){
+	
+	// print("update positions " + update_positions);
+	
+	String zStageName =  mmc.getFocusDevice();
+	String stageName = mmc.getXYStageDevice();
+		
+	savepath = savedir + "spheroid_coms/" + "run_" + index + "/";
+	
+	new File(savepath).mkdirs();
+	filter_naming = true;
+
+	PositionList pl = mm.positions().getPositionList();
+	pl.save(savepath + "original.pos");
+
+	// get array of stage positions for the scan, dist_from_ctr = 
+	// half of the total scan distance, is measured from centre of y_bg
+
+	n_pos = pl.getNumberOfPositions();
+
+	// define arrays
+	int[][] rows_and_cols = get_rows_and_cols();
+
+	int[] x_pos = new int[n_pos];
+	int[] y_pos = new int[n_pos];
+	int[] z_pos = new int[n_pos];
+
+	int[] spheroid_x_positions = new int[n_pos];
+	int[] spheroid_y_positions = new int[n_pos];
+
+	PositionList pl_shift = new PositionList(); 
+	String[] labelList = new String[n_pos];
+
+
+	time_begin = System.currentTimeMillis();
+	reduction = 5;
+
+	print("Stack reduction by factor of " + 5);
+
+	for(f = 0; f < n_pos; f++) {  // fields
+		print("Field "+ f);
+
+		end_dir = "run_" + index + "/field_" + f + "/" + wavelength + "/" + fw + "/acq_rfl/MMStack.ome.tif";
+		load_dir = savedir + end_dir;
+		print("opening: " + load_dir);
+
+		imp = IJ.openImage(load_dir);
+		// factor 5 reduction
+		IJ.run(imp, "Reduce...", "reduction="+reduction);
+		IJ.run(imp, "Set Scale...", "distance=1 known=1 unit=µm");
+		
+		x_com = 0;
+		y_com = 0;
+		
+		//maxX = 50;
+		//maxY = 50;
+
+		try {
+			find_sph_out = find_spheroid_xycom(imp, trg_dist*reduction, maxX, maxY);
+			if(maxX > 0) x_com = find_sph_out[0];
+			if(maxY > 0) y_com = find_sph_out[1];
+		} catch (Exception ex){
+			print("failed to find CoM with error: " + ex.toString());
+		}
+		imp.close();
+		
+		print("x_com: "+ x_com);
+		print("y_com " + y_com);
+		
+		//print("x before: "+ x);
+		//print("y before " + y);
+
+		spheroid_x_positions[f] = x_com;
+		spheroid_y_positions[f] = y_com;
+		
+		mp = pl.getPosition(f);
+		
+		x = mp.getX();
+		y = mp.getY();
+		z = mp.getZ();
+		
+		if (ignore_position_idx[f] == 0){
+			x += x_com;
+			y += y_com;
+		} else {
+			print("Ignoring shift of this well (bead well)!");
+		}
+		
+		//print("x after: "+ x);
+		//print("y after " + y);
+
+		label = mp.getLabel();
+		labelList[f] = label;
+
+		msp = new MultiStagePosition(stageName, x, y, zStageName, z);
+		msp.setLabel(label);
+		pl_shift.addPosition(msp);
+
+	} // field loop
+	// if (update_positions) mm.positions().setPositionList(pl_shift);
+
+	pl_shift.save(savepath + "new.pos");
+
+	BufferedWriter row_col_xy = new BufferedWriter(new FileWriter(savepath + "xy_com_shift.csv"));
+
+	for(n=0; n<n_pos; n++){
+		row_col_xy.write(labelList[n] + "," + spheroid_x_positions[n] + "," + spheroid_y_positions[n] + "\n");
+	}
+	row_col_xy.close();
+	
+	time_end = System.currentTimeMillis();
+	delta_t = Math.max(0,Math.round((time_end - time_begin)/1000)); // seconds
+	sc.message("Position shift finding took " + delta_t + "s");		
+	
+	return pl_shift;
+}

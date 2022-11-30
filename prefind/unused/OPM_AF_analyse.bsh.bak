@@ -1,0 +1,141 @@
+// open("C:\\Users\\OPMuser\\Desktop\\DELETEME2\\MMStack_Default.ome.tif");
+// run("Duplicate...", "duplicate");
+
+import ij.plugin.Duplicator;
+
+int[] find_spheroid_z(ImagePlus imp, int min_otsu_thresh, boolean xy_com, String savedir){
+
+	comY = 0;
+	comX = 0;
+	
+	// do we need to think about mag being squared here for xz plane?
+	mag = 20.4*1.34;  // 20.4 number calculated somewhere...
+	px_size_um = 6.5;
+	z_relative = 0;
+	
+	err_code = 2;
+
+	IJ.run(imp, "Rotate 90 Degrees Left", "");
+
+	fi = imp.getFileInfo();
+	y_spacing = fi.pixelDepth;
+	h = imp.getHeight();
+	w = imp.getWidth();
+	nSlices = imp.getNSlices();
+
+	imp.setRoi(8, 0, 992, 1280);  // do processing on imp2, keep imp
+	imp.crop();
+	
+	imp2 = new Duplicator().run(imp);
+
+	// print(imp2);
+
+	IJ.run(imp2, "Z Project...", "projection=[Max Intensity]");
+	// unfortunately can't avoid the Z project appearing in new window,
+	// is there a workaround? Means I have to use getImage.
+	imp2.close();
+	imp2 = IJ.getImage();
+	
+	imp2.setRoi(0, 0, 992, 1280);
+
+	IJ.run("Clear Results");
+	IJ.run(imp2, "Measure", "");
+
+	rt = ResultsTable.getResultsTable();
+	min = rt.getValue("Min",0);
+	IJ.run(imp2, "Auto Threshold", "method=Otsu white show");
+	IJ.run(imp2, "Dilate", "");
+	
+	logString = IJ.getLog();
+	logArray = logString.split("\n");
+	otsustr = logArray[logArray.length-1];
+	otsu_val = otsustr.split(": ");
+	otsu_val_int = Integer.parseInt(otsu_val[1]);
+
+
+	// print(min_otsu_thresh);
+	if (otsu_val_int-min < min_otsu_thresh){
+		print("otsu thresh minus min is: " + (otsu_val_int-min));
+		return new int[]{z_relative, comX, comY, 1};  // error code 1
+	}
+	// print("dilated");
+	imp2.setRoi(0, 0, 992, 1280);
+	IJ.run("Clear Results");
+	pp = new ProfilePlot(imp2);
+	profile = pp.getProfile();
+
+	y_from_bottom = -1;
+
+	for (i=0; i<profile.length; i++){
+		// print("value: " + profile[profile.length-i-1]);
+		if (profile[profile.length-i-1] > 1) {
+			y_from_bottom = i;
+			print("found: " + (profile.length-i-1) + "px");
+			break;
+		}
+	}
+
+	if (y_from_bottom >= 0) {
+		err_code = 0;
+		// convert z from px, 10 because encoded in  1um -> 0.1um for some reason
+		z_relative = - (10 * px_size_um * y_from_bottom * Math.sin(35*Math.PI/180)/mag);
+	}
+
+	// do CoM find to improve y and x //
+	if (err_code == 0 && xy_com){
+		// can do x with the MIP
+		IJ.run("Clear Results");
+		IJ.run("Set Measurements...", "mean min max center redirect=None");
+		IJ.run(imp2, "Measure", "");  // measure CoM of otsu of MIP projection (imp2)
+		rt = ResultsTable.getResultsTable();
+		comX = rt.getValue("YM",0);  // we rotated our image, so YM.
+		middle_x = w/2;
+		comX = middle_x - comX;  // need to work out signs of this shift in stage coords
+		print("comX in pixels: " + comX);
+		// y needs to look at stack
+		// subtract bg to help CoM
+		IJ.run("Clear Results");
+		IJ.run(imp, "Measure", "");
+		min = rt.getValue("Min",0);
+		IJ.run(imp, "Subtract...", "value="+min+" stack");
+		IJ.run("Clear Results");
+		IJ.run("Set Measurements...", "mean min max center redirect=None");
+		// int[] sum_z = new int[nSlices];
+		y_times_value = 0;
+		sum_value = 0;
+		IJ.run("Clear Results");
+		
+		for (y = 0; y < nSlices; y++){
+			imp.setSlice(y+1);
+			IJ.run(imp, "Measure", "");
+			value = rt.getValue("Mean", y);
+			sum_value += value;
+			y_times_value += y*value;
+		}
+		comY = y_times_value/sum_value;
+		middle_y = nSlices/2;
+		comY -= middle_y;  // need to work out signs of this shift in stage coords
+		print("comY in pixels: " + comY);
+		comY *= y_spacing;  // get real distances
+		print("comY * by spacing: " + comY);
+		comX *= px_size_um/mag;
+	}
+	
+	if (!savedir.equals("")){
+		IJ.saveAs(imp, "Tiff", savedir+"/stack.tif");
+		IJ.saveAs(imp2, "Tiff", savedir+"/mip_otsu.tif");
+	}
+	imp.close();
+	// IJ.run("Close All", "");  // because it wants to keep the Z proj so badly
+	imp2.close(); // probably lost in scope anyway 
+
+	return new int[]{z_relative, comX, comY, err_code};
+}
+
+int[] find_spheroid_z(ImagePlus imp, int min_otsu_thresh){
+	return find_spheroid_z(imp, min_otsu_thresh, false, "");
+}
+
+int[] find_spheroid_z(ImagePlus imp, int min_otsu_thresh, boolean xy_com){
+	return find_spheroid_z(imp, min_otsu_thresh, xy_com, "");
+}

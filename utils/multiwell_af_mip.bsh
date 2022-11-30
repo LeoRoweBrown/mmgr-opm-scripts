@@ -1,0 +1,94 @@
+import ij.ImagePlus;
+import org.micromanager.data.Datastore;
+import org.micromanager.PositionList;
+import org.micromanager.StagePosition;
+import org.micromanager.MultiStagePosition;
+import org.micromanager.data.DataProvider;
+import org.micromanager.display.internal.displaywindow.imagej.MMVirtualStack;
+import ij.process.ImageProcessor ;
+import org.micromanager.data.Image;
+import ij.ImageStack;
+
+
+import java.lang.*;
+import java.util.*;
+import java.util.List;
+
+List images = mm.live().snap(false);
+xyStage = mmc.getXYStageDevice();
+zStage = mmc.getFocusDevice();
+groupname = "Cam Trig";
+old_exposure = mmc.getExposure();
+old_group_set = "External";
+cam_device = mmc.getCameraDevice();
+//
+travel_speed_um_per_ms = 10;
+scan_speed_um_per_ms = 1;
+
+
+travelToPositionRetry(
+	z_current,x_pos[f],y_bg[f],travel_speed,stageName,zStageName,
+	movetimeout_s,debug);
+mmc.setXYPosition(this_pos.x, this_pos.y-(y_scanwidth_um/2));
+
+
+
+mmc.setProperty(xyStage, "SpeedX [mm/s]",stage_speed_um_per_ms);
+mmc.setProperty(xyStage, "SpeedY [mm/s]",stage_speed_um_per_ms);
+
+int numImages = 10;
+double intervalMs = 0;
+boolean stopOnOverflow = true;
+
+PositionList new_pl = new PositionList();
+PositionList pl = mm.positions().getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+//ASSUMING XY STAGE VALUES ARE IN UM
+y_scanwidth_um = 1000;
+exposure_for_scan = y_scanwidth_um/(numImages*stage_speed_um_per_ms);
+
+this_pos = pl.getPosition(0);
+
+mmc.setExposure(exposure_for_scan);
+mmc.setConfig(groupname, "Internal");
+mmc.prepareSequenceAcquisition(cam_device);
+
+
+cb = mm.data().getCoordsBuilder().z(0).c(0).p(0).t(0);
+
+mmc.waitForSystem();
+
+mmc.setXYPosition(this_pos.x, this_pos.y+(y_scanwidth_um/2));
+
+mmc.startSequenceAcquisition(numImages, 0, true);
+int curFrame = 0;
+
+ImageStack stack;
+ImagePlus imgplus =  new ImagePlus();
+
+while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+   if (mmc.getRemainingImageCount() > 0) {
+      tagged = mmc.popNextTaggedImage();
+      // Convert to an Image at the desired channel.
+      cbuild = cb.z(curFrame).c(0).p(0).t(0).build();
+      image = mm.data().convertTaggedImage(tagged, 
+                 cbuild, null);
+
+		iProcessor = mm.data().ij().createProcessor(image);           
+      
+		if (curFrame == 0) stack = ipimgs[0].getImageStack();
+		else stack.addSlice(iProcessor);
+		// stack.addSlice(iProcessor);
+      curFrame++;
+   }
+   else { mmc.sleep(5); }
+}
+
+imgplus.setStack(stack);
+imgplus.show();
+
+y = IJ.runMacroFile("C:\\Users\\OPMuser\\Documents\\micromanager\\mmgr-opm-scripts\\utils\\OPM_AF_analyse.ijm", "200");
+print(y);
+
+//imgplus.close();

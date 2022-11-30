@@ -1,0 +1,19 @@
+
+max_dist_from_cslip = -1000;
+z_above_cslip = 0;
+max_z = -3500;
+z_current_prefind = -3020 - 1700;
+z_step_shperoid = -500;
+z_above_cslip = 0;
+
+while (z_above_cslip >= max_dist_from_cslip){  // note inequality, negative vals
+	print("cslip " + z_above_cslip);
+	// random safety measure, hard limit
+	print("max" +( max_z + max_dist_from_cslip -1700));
+	print("current" + z_current_prefind);
+	if (z_current_prefind < max_z + max_dist_from_cslip - 1700){
+		throw MMException("Why are you going this high?"); // remember negative
+	}
+	z_above_cslip += z_step_spheroid;
+	z_current_prefind += z_step_spheroid;
+}

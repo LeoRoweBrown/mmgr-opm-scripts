@@ -1,0 +1,98 @@
+int[] find_coverslip_z(ImagePlus imp, int min_otsu_thresh, boolean use_otsu, boolean showimage){
+	mag = 20.4*1.34;  // 20.4 number calculated somewhere...
+	px_size_um = 6.5;
+	z_relative = 0;
+	// print(imp);
+	h = imp.getHeight();
+	// print(h);
+	err_code = 2;
+
+	////
+	IJ.run(imp, "Rotate 90 Degrees Left", "");
+	imp.setRoi(8, 0, 992, 1280);
+	imp.crop();
+	// print("rotated");
+	
+	IJ.run("Clear Results");
+	
+	if (showimage) imp.show(); // only way I can do this
+	IJ.run("Set Measurements...", "mean min max redirect=None");
+	IJ.run(imp, "Measure", "");
+	// print("measured");
+	
+	rt = ResultsTable.getResultsTable();
+	min = rt.getValue("Min",0);
+	
+	found = false;
+	
+	if (!use_otsu){  // manual threshold method
+		// IJ.run(imp, "Manual Threshold...", "min="+min_otsu_thresh+" max=65535");
+		// IJ.run(imp, "Convert to Mask", "");
+		// IJ.run(imp, "Invert LUT", "");
+		
+		IJ.setRawThreshold(imp, min_otsu_thresh, 65535, null);
+		IJ.run(imp, "Convert to Mask", "");
+		IJ.run(imp, "Invert LUT", "");
+		
+		IJ.run(imp, "Dilate", "");
+		IJ.run("Clear Results");
+		IJ.run(imp, "Measure", "");
+		max = rt.getValue("Max",0);
+		if (max > 0) found = true;
+	} else {
+		IJ.run(imp, "Auto Threshold", "method=Otsu white show");
+		IJ.run(imp, "Dilate", "");
+	
+		logString = IJ.getLog();
+		logArray = logString.split("\n");
+		otsustr = logArray[logArray.length-1];
+		otsu_val = otsustr.split(": ");
+		otsu_val_int = Integer.parseInt(otsu_val[1]);
+
+		// print(min_otsu_thresh);
+		if (otsu_val_int-min < min_otsu_thresh){
+			print("not found, otsu thresh minus min is: " + (otsu_val_int-min));
+		} else { found = true; }
+	}
+	if (!found){ 
+		imp.changes = false;
+		imp.close();
+		return new int[]{z_relative, 1};  // error code 1
+	}
+		
+	// print("dilated");
+	imp.setRoi(0, 0, 992, 1280);
+	IJ.run("Clear Results");
+	pp = new ProfilePlot(imp);
+	profile = pp.getProfile();
+	// print("profile");
+	y_from_bottom = -1;
+	// imp.close();
+
+	for (i=0; i<profile.length; i++){
+		// print("value: " + profile[profile.length-i-1]);
+		if (profile[profile.length-i-1] > 1) {
+			y_from_bottom = i;
+			print("found: " + (profile.length-i-1) + "px");
+			break;
+		}
+	}
+
+	// print("y from bottom: ", y_from_bottom);
+
+	if (y_from_bottom >= 0) {
+		err_code = 0;
+		// convert z from px, 10 because encoded in  1um -> 0.1um for some reason
+		z_relative = - (10 * px_size_um * y_from_bottom * Math.sin(35*Math.PI/180)/mag);
+	}
+	
+	imp.changes = false;
+	if (showimage){
+		Thread.sleep(500);
+		imp.close();
+	}
+	imp.close();
+	// imp2 = IJ.getImage();
+	// imp2.close();
+	return new int[]{z_relative, err_code};
+}

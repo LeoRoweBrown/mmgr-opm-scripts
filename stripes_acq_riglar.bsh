@@ -30,9 +30,8 @@ port_xy = "COM1";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-// savedir = "E:/nina/prefind_test_20220609/main/" + dateFormat.format(date) + "/";
-savedir = "E:/nina/slow_z/main/" + dateFormat.format(date) + "/";
-// savedir = "E:/nina/20220426_fixed_square/background/" + dateFormat.format(date) + "/";
+savedir = "E:/riglar/20220517_gut_fixed/ibd_rrx/background/" + dateFormat.format(date) + "/";
+// savedir = "E:/nina/fixed_forNina_20211220/background/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -54,8 +53,7 @@ sc.message("Successfully cleaned up");
 	trg_dist = 1.4; //trigger distance in micron
 	double travel_speed = 10;  // travel speed mms/(?)
 	double scan_speed = 0.1; //0.01;/  // scan speed mm/s(?)
-	// double[] scan_speeds = {0.15; 0.1; 0.15; 0.15;}
-	dist_from_ctr = 200;  // half of the total scan distance in um
+	dist_from_ctr = 200;//1350;  // half of the total scan distance in um
 	movetimeout_s = 60;  // timeout for stage travel
 	scan_tries = 3;  // general retry count until skipping field
 	max_retries = 3;  // maximum number of retries before skipping
@@ -63,21 +61,15 @@ sc.message("Successfully cleaned up");
 	max_dropped_frames = 1; // maximum dropped frames
 
 	filter_naming = true;
-	// REMEMBER TO CHANGE THIS!!!
 	test_mode = false; // delete files after acquiring
 	unset("z_offset");
 	z_offset = 0;//-100000;
 	y_offset = 0;
 
-	// under sample plate
-	// undersample_row_number = 5;
-	// undersample_col_factor = 5;
-	// cols = 
-
 // Time-lapse parameters 
-	n_run = 20;
+	n_run = 1;
 	// n_run = 1;
-	run_interval = 20; // in minutes
+	run_interval = 30; // in minutes
 	first_run =0; // 0-indexing
 
 // Saving parameters
@@ -91,14 +83,12 @@ sc.message("Successfully cleaned up");
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
 // (count from 0)
-unset("fw_pos");
-
-int[] fw_pos = {2}; // {3}; // //
-int[] las_channels =  {2}; //{1};//;  // DAQ channels corresponding to each fw pos
-int[] wavelengths = {457, 515, 561, 642};
-// int[] wavelengths =  {488, 515, 561, 642};
-float[] amplitudes = {5};// // {1};
-int[] exposures  =  {5};//
+int[] fw_pos = {4,2,1}; // {3}; // //
+int[] las_channels =  {0,2,3}; //{1};//;  // DAQ channels corresponding to each fw pos
+// int[] wavelengths = {457, 515, 561, 642};
+int[] wavelengths = {488, 515, 561, 642};
+float[] amplitudes =  {5,5,5}; // {1};
+int[] exposures  =  {5,5,5}; 
 
 /////////////////////////////////////////////////////////////////////
 
@@ -125,19 +115,6 @@ if (n_fields == 0){
 
 // get array of stage positions for the scan, dist_from_ctr = 
 // half of the total scan distance, is measured from centre of y_bg
-int ret = convertCtr(f_pos,x_pos,y_bg,y_end,dist_from_ctr,dist_from_ctr);
-
-// Checking positions in microns
-
-int[] x_lim = {-12000000,1000000};
-int[] y_lim = {-12000000,1000000};
-
-u1 = checkPos(x_pos, x_lim);
-u2 = checkPos(y_bg, y_lim);
-u3 = checkPos(y_end, y_lim);
-if((u1+u2+u3) != 0) {
-     throw new MMException("Position errors");
-}
 
 unset("n_img");
 int[] n_img = new int[n_fields];
@@ -149,17 +126,17 @@ for(i = 0;i< n_fields;i++) {
 	y_end[i] = y_end[i] + y_offset;
 	y_bg[i] = y_bg[i] + y_offset;
 	f_pos[i] = f_pos[i] + z_offset;
-	mp = pl.getPosition(i);
-	if (mp.get(zStageName) == null){
-		sc.message("Replacing zeroes in ZAxis");
-		f_pos[i] = (int) Math.floor(mmc.getPosition(zStageName));
-	}
 	n_img[i] = (int) Math.ceil((double) (((double) y_end[i]) - ((double) y_bg[i])) / ((double) trg_dist)); 
 	n_tot_img = n_tot_img + n_img[i];
 };
 
-// check that ZAxis not set
-//		mp.get("ZAxis");
+double[] params = {35.0, 0.05};
+posArray = convertCtrStripesSnake(params, "E:/riglar/20220517_gut_fixed/");
+
+int[] f_pos = posArray[0];
+int[] x_pos = posArray[1];
+int[] y_bg = posArray[2];
+int[] y_end = posArray[3];
 
 ///////////////////////////////////////////////////////////////////////////////
 // Save parameters
