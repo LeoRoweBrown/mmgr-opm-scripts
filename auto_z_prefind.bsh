@@ -1,0 +1,75 @@
+// import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+import org.micromanager.internal.utils.MMException;
+// import java.util.List;
+import java.lang.*;
+import java.util.*;
+import ij.*;
+
+// negative is objetive up
+min_z = -1000;
+max_z = 3000;
+f = null;  // middle focus, if null just get current focus position
+
+PositionList pl = mm.positions().getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+for (pos_i=0; pos_i<n_pos; pos_i++){
+	mp = pl.getPosition(pos_i);
+	x1[pos_i] = (int) Math.floor(mp.getX()); 
+	y1[pos_i] = (int) Math.floor(mp.getY());  
+
+	// if no ZAxis in the position list, get it from current value
+	if (f == null){
+		f = mmc.getPosition(zStageName);
+	}
+	f1[pos_i] = (int) Math.floor(f);
+}
+
+for (pos_i=0; pos_i<n_pos; pos_i++){
+	
+	sc.message("Position " + pos_i);
+
+	// timetotravel = step_z/zspeed_mmps;
+	full_traveltime = (max_z - min_z)/zspeed_mmps + 50;
+	z = f1[pos_i] + max_z;  // starting z, positive to negative - moving obj up
+	print("starting z "+ z);
+	print("ending z " + (z+(max_z - min_z)));
+	// mmc.setPosition(zStageName,z);
+	
+	travelToPositionRetry(
+		z, x1[pos_i], y1[pos_i], travel_speed, stageName, zStageName, 30);
+
+	// Z scanning
+	for (n=0; n<n_z; n++){
+		// z = f1 + n*step_z + min_z;
+		//print("here");
+		print(z);
+		mmc.setPosition(zStageName,z);
+		Thread.sleep(25);
+		Thread.sleep((int)timetotravel);
+		// mmc.clearCircularBuffer();
+		
+		// TaggedImage img = mmc.popNextTaggedImage();	
+		// Image tmp = mm.data().convertTaggedImage(img);
+		images = mm.live().snap(true);
+		image = images.get(0);
+		
+		IJ.run("Set Measurements...", "mean standard min redirect=None decimal=4");
+		IJ.run("Measure");
+
+		z -= step_z;
+		
+	}
+}
+	
+	

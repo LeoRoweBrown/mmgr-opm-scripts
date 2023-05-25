@@ -1,0 +1,58 @@
+import org.micromanager.internal.utils.MMException;
+
+// createEvent_powershell_script = "C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/powershell_event/createErrorEvent.ps1";
+writeEvent_powershell_script = "C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/powershell_event/writeErrorEvent.ps1";
+
+opm_parameters() {  // kind of a constructor, contains params
+
+	trg_dist = 1.4; //trigger distance in micron
+	double travel_speed = 10;  // travel speed mms/(?)
+	double[] scan_speeds = {0.05; 0.05; 0.05; 0.05;}
+	dist_from_ctr = 250;  // half of the total scan distance in um
+	movetimeout_s = 60;  // timeout for stage travel
+	scan_tries = 3;  // general retry count until skipping field
+	max_retries = 3;  // maximum number of retries before skipping
+	max_field_skips = 3; // maximum skips per run before stopping
+	max_dropped_frames = 1; // maximum dropped frames
+	
+	// Time-lapse parameters 
+	n_run = 1;
+	run_interval = 30; // in minutes
+	
+	unset("fw_pos"); // z-prefind uses this name unfortunately
+
+	int[] fw_pos =  {5,3,2,1}; 
+	int[] las_channels =  {0,1,2,3}; // DAQ channels corresponding to each fw pos
+	int[] wavelengths = {457, 515, 561, 642};
+	// int[] wavelengths =  {488, 515, 561, 642};
+	float[] amplitudes = {5,5,5,5}; // {1};
+	int[] exposures  =   {10,10,10,10}; 
+
+	scan_speeds = check_exp_with_scanspeed(scan_speeds, exposures);
+	
+    return this;
+}
+
+p = opm_parameters();
+
+savedir = "E:/nina/prefind_test_20220609/main/"
+
+try {
+	run_opm_acquisition(savedir, p);
+} catch (Exception e) {
+	errorString = e.toString;
+	/* String[] commandListCreate = {"powershell.exe", "-Command", createEvent_powershell_script};  
+    ProcessBuilder pbCreate = new ProcessBuilder(commandListCreate);  
+    Process pCreate = pbCreate.start();
+	*/
+	String[] commandList = {"powershell.exe", "-Command", writeEvent_powershell_script, "-Parameter", "'" + errorString + "'"};  
+    ProcessBuilder pb = new ProcessBuilder(commandList);  
+    Process p = pb.start();
+	
+	throw e;
+	// send email alert at some point
+}
+	
+
+
+

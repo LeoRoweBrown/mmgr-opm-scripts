@@ -1,0 +1,17 @@
+import ij.plugin.Duplicator;
+import ij.IJ;
+import ij.WindowManager;
+
+imp = IJ.openImage("E:\\nina\\20220426_fixed_square\\main\\22-04-26\\17-30-36\\run_0\\field_0\\561\\2\\acq_rfl\\MMStack.ome.tif");
+imp2 = new Duplicator().run(imp);
+
+IJ.run(imp2, "Z Project...", "projection=[Max Intensity]");
+
+IJ.run(imp2, "Measure", "");
+
+//IJ.run(imp2, "Auto Threshold", "method=Otsu white");
+
+//IJ.run(imp2, "Dilate", "");
+
+ID = getCurrentImage();
+print(ID);

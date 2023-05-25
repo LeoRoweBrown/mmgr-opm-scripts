@@ -1,0 +1,61 @@
+print("Undersampling poslist");
+row_pat_str = "(?<=Row[-\\s])[A-Z]+";
+Pattern row_pattern = Pattern.compile(row_pat_str);
+col_pat_str = "(?<=Column[-\\s])[0-9]+";
+Pattern col_pattern = Pattern.compile(col_pat_str);
+
+PositionList pl = mm.positions().getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+int[] col = new int[n_pos];
+int[] row = new int[n_pos];
+
+int[] included = new int[n_pos];
+
+for(n=0; n<n_pos; n++){
+	// print(pl.getPosition(n).label);
+	Matcher row_m = row_pattern.matcher(pl.getPosition(n).label);
+	Matcher col_m = col_pattern.matcher(pl.getPosition(n).label);
+	row_m.find();
+	col_m.find();
+	
+	row_str = row_m.group(0);
+	col_str = col_m.group(0);
+	
+	col[n] = Integer.parseInt(col_str);
+	row[n] = (int)(row_str.charAt(0)) - (int)'A' + 1;
+}
+
+sort_col = Arrays.sort(col);
+sort_row = Arrays.sort(row);
+min_col = sort_col[0];
+min_row = sort_row[0];
+max_col = sort_col[sort_col.length - 1];
+max_row = sort_row[sort_row.length - 1];
+
+ncols = Math.round((double)(max_col - min_col)/col_spacing) + 1;
+nrows = Math.round((double)(max_row - min_row)/row_spacing) + 1;
+
+int[] col_included = new int[ncols];
+for(c=0; c<ncols; c++){
+	col_included[c] = min_col + c*col_spacing;
+}
+for(r=0; r<nrows; r++){
+	row_included[r] = min_row + r*row_spacing;
+}
+
+for(n=0; n<n_pos; n++){
+	included[n] = 0;
+	for (c=0; c<col_included.length; c++){
+		if (col[n] == col_included[c]);
+		col_keep = true;
+		break;
+	}
+	if (!col_keep) continue;
+	for (r=0; c<row_included.length; r++){
+		if (row[n] == row_included[r]);
+		included[n] = 1;  // both col and row is to be kept
+		break;
+	}
+}
+

@@ -1,0 +1,20 @@
+import ij.IJ;
+
+source("C:\\Users\\OPMuser\\Documents\\micromanager\\mmgr-opm-scripts\\prefind\\epi_prefind_functions.bsh");
+
+
+/*IJ.run("Image Sequence...", "open=E:\\nina\\20221125_live_plate4\\mrfp_stack_andor\\22-11-28\\16-44-49\\field_1_well_Row_D_Column_5_Field_0\\z_00.tif sort");
+imp = IJ.getImage();
+xy = find_best_xyz(imp, 20, "");
+*/
+
+root_dir = "E:/nina/20230331_drug_plate3/citrine_stack_andor/23-03-31/16-34-40/";
+
+spheroid_px_diameter = 15;
+min_particle_size = 10;
+
+image_output_dir = "E:/nina/20230331_drug_plate3/pf_4x_citrine_output";
+
+posnew = calc_new_positions(root_dir, spheroid_px_diameter, min_particle_size, "biggest_and_brightest", image_output_dir, false, false);
+
+mm.positions().setPositionList(posnew);

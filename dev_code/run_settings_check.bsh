@@ -1,0 +1,19 @@
+// check functions
+
+// check if scanspeed and exposure time are compatible
+double[] check_exp_with_scanspeed(trg_dist, scan_speeds, exposures){
+	print("not implemented");
+	exposures = p.exposures;
+	scan_speeds = p.scan_speeds
+	for (i=0; i<exposures.length; i++){
+		time_between_trig_ms = trg_dist/scan_speeds[i];
+		// set max duty cycle to 90% arbitrary choice
+		if (0.9*exposures[i] > time_between_trig_ms){
+			print("WARNING: Exposure too long or scan_speed to fast for pair:" +
+			"scan_speed = " + scan_speed[i] + " and exposure = " + exposures[i]);
+			new_trig_time_ms = 0.9*exposures[i];
+			scan_speeds[i] = trg_dist/new_trig_time_ms;
+		}
+	}
+	return scan_speeds;
+}

@@ -1,0 +1,205 @@
+
+root_dir = 'E:\nina\20221125_live_plate4\mrfp_stack_andor\22-11-25\16-48-24\';
+
+savename = 'mrfp';
+
+savedir = 'E:\nina\20221125_live_plate4\prefind_output';
+
+t = datetime('now','Format','yy-MM-dd''\''HH-mm-ss');
+
+output_dir = fullfile(savedir, string(t));
+mkdir(output_dir);
+
+overlay_dir = fullfile(output_dir, 'overlay_prefind_imgs');
+overlay_rm_bg_dir = fullfile(output_dir, 'overlay_prefind_imgs_bg_rm');
+
+mkdir(overlay_dir);
+mkdir(overlay_rm_bg_dir);
+
+fields = dir(root_dir);
+fields = fields(contains({fields.name},{'field'}));
+
+fields = {fields.name};
+field_numbers = cellfun(@(s)sscanf(s, 'field_%d'), fields);
+
+%% get params
+params = get_prefind_params(root_dir);
+
+number_of_max_pixels = 200; // 200;  % for robustness in taking max values
+
+
+options.num_max_px = number_of_max_pixels;
+options.ignoreslice = 0;  % don't ignore
+options.biggest = true;
+options.brightest = false;
+options.selection = "biggest_and_brightest";
+options.refine_focus = true;
+options.refine_focus_roi_r = 50;
+options.CoM_focus = true;
+
+
+scale_factor = 5.5;
+// different between focus on andor with 2x and focus on eyepieces with 60x!
+
+z_offset = -7493;  % 2x to 60% z conversion
+
+%% get backgrounds
+bg_stack = get_bg_stack(root_dir, fields);
+
+% backgrounnd rejection amount
+bg_rm_fraction = 0.9;  % only remove 90% of background
+
+for f_i = 1:numel(fields)
+    f = field_numbers(f_i);  % imported to use THIS one because order wrong
+    stackpath = fullfile(root_dir, fields{f_i});
+    stack = uint16(load_stack(stackpath));  % when tiffs are split up
+    stack_raw = stack;
+    stack = stack - bg_stack*bg_rm_fraction;
+    f
+    f_n = f+1;  % for MATLAB counting from 0
+    tic;
+    mean_stack = mean(stack);
+    mean_time = toc
+    max_slice_value = 0;
+    max_slice = 1;
+    % get slice maximum, robust maxk
+    tic
+    [xyz_array(f_n, :), roi, mean_sig] = get_best_xyz(stack, options, f);
+    roi_array(f_n,:,:) = roi;
+    flat_roi_array(f_n, :) = roi(:);
+    spheroid_signals(f_n) = mean_sig;
+    find_per_field_time = toc
+
+    xy = [xyz_array(f_n,1), xyz_array(f_n,2)];
+    x = xy(1);
+    y = xy(2);
+    z = xyz_array(f_n,3);
+    if isnan(z)
+        z = round(size(stack, 3)/2);
+    end
+    [image, err] = get_prefind_image_overlay(stack_raw(:,:,z), xy, options.refine_focus_roi_r);
+    [image_bg_rm, err] = get_prefind_image_overlay(stack(:,:,z), xy, options.refine_focus_roi_r);
+    image_overlays{f_n} = image; 
+    imwrite(image, fullfile(overlay_dir, sprintf('field_%03d.png', f)));
+    imwrite(image_bg_rm, fullfile(overlay_rm_bg_dir, sprintf('field_%03d.png', f)));
+    if err == 1
+        x = 0;
+        y = 0;
+        fails(f) = 1; 
+    end
+    % refine the answer by supplying best focus?
+    % xyz = get_best_xyz(stack, options, xyz(3));
+    %% get z based from stack number
+    real_z(f_n) = params.f_pos(f_n) + params.min_z + params.step_z*z;
+    
+    % real um shifts
+    x_shift = ((x - 1004/2)*scale_factor)+50; 
+    y_shift = ((y - 1002/2)*scale_factor)+250;
+    z_value = real_z(f_n) + z_offset;
+    
+    %% Set z values to their max/min to prevent crashing
+    if use_hard_limits
+        if z_value > hard_limit_max_z
+            z_value = hard_limit_max_z
+        elseif z_value < hard_limit_min_z
+            z_value = hard_limit_min_z
+        end
+    end
+    
+    xyz_pixel_shifts(f_n, :) = [(x) (y) z_value];
+    xyz_pixel_shifts_ctr(f_n, :) = [(x - 1004/2) (y - 1002/2) z_value];
+    xyz_um_array_shifts(f_n, :) = [x_shift y_shift z_value];
+
+end
+
+%% replace extreme Z's
+z_std = std(xyz_um_array_shifts(:, 3));
+z_mean = mean(xyz_um_array_shifts(:, 3));
+
+mask = abs(xyz_um_array_shifts(:, 3) - z_mean) > extremes_n_std*z_std;
+
+% assign mean z value
+xyz_um_array_shifts(mask, 3) = z_mean;
+    
+
+%% get positions list
+x = xyz_array(:, 1);
+y = xyz_array(:, 2);
+
+% get shifts:
+
+% save csv for MM
+csvwrite(fullfile(output_dir, "prefind_shifts.csv"), xyz_um_array_shifts);
+csvwrite(fullfile(output_dir, "prefind_pixel_shifts.csv"), xyz_pixel_shifts);
+csvwrite(fullfile(output_dir, "prefind_pixel_shifts_ctr.csv"), xyz_pixel_shifts_ctr);
+
+% json = generate_prefind_positions_list(x, y, real_z, "E:\nina\fixed_20211216\positions.pos");
+
+%% auto reject
+% thresholding works best in log space
+% threshold = multithresh(spheroid_signals);
+spheroid_sig_log = log(spheroid_signals - min(spheroid_signals) + 1);
+threshold = multithresh(spheroid_sig_log);
+man_threshold = 10;  % MANUAL THRESHOLD
+mask = spheroid_sig_log>threshold;
+if man_threshold > 0
+    mask = spheroid_signals > man_threshold;
+end
+
+dlgTitle    = 'Manual rejection';
+dlgQuestion = 'Run manual rejection?';
+response = questdlg(dlgQuestion,dlgTitle,'Yes','No','Abort', 'Yes');
+
+if strcmp(response, 'Yes')
+    mask_overwrite = zeros(size(mask));
+    incorrect_wells = false(size(mask));
+    %% ask user to reject? loop over all 
+    for n = 1:numel(mask)
+        img = squeeze(double(roi_array(n,:,:)));
+        img = img/max(img(:));
+        f = figure(1);
+        set(f, 'Position', [400, 400, 300, 300]);
+        imshow(img);
+        % now full image
+        f2 = figure(2);
+        set(f2, 'Position', [800, 300, 300, 300]);
+        image_ol = double(image_overlays{n})/double(max(image_overlays{n}(:)));
+        image_ol = imresize(image_ol, 0.33);
+        imshow(image_ol);
+        dlgTitle    = 'Manual rejection';
+        dlgQuestion = 'Keep well?';
+        response = questdlg(dlgQuestion,dlgTitle,'Yes','No','Yes, but wrong object', 'Yes');
+        if strcmp(response, 'Yes')
+            mask_overwrite(n) = true;
+        elseif strcmp(response, 'Yes, but wrong object')
+            mask_overwrite(n) = true;
+            incorrect_wells(n) = true;
+        elseif strcmp(response, 'Abort')
+            close(f2);
+            close(f);
+            break;
+        end
+        % close(fimg);
+    end
+else
+    return
+end
+
+%% true positive etc
+tp = and(mask, mask_overwrite);
+fp = and(mask, ~mask_overwrite);
+tn = and(~mask, ~mask_overwrite);
+fn = and(~mask, mask_overwrite);
+
+tpr = sum(tp)/(sum(tp)+sum(fn))  % sensitivity
+tnr = sum(tn)/(sum(tn)+sum(fp))
+
+false_negatives = sum(fn)
+false_positives = sum(fp)
+
+
+%%
+csvwrite(fullfile(output_dir, "manual_reject.csv"), mask_overwrite);
+csvwrite(fullfile(output_dir, "auto_reject.csv"), mask);
+csvwrite(fullfile(output_dir, "wrong_position.csv"), incorrect_wells);
+

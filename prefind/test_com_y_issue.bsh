@@ -1,0 +1,164 @@
+
+	ImagePlus imp = IJ.getImage();
+	trg_dist = 28.0;
+	maxX = 1000;
+	maxY = 1000;
+	maxZ = 1000;
+	min_particle_size = 1600;
+
+	// if use_otsu = false, we compute manual threshold
+	// print("start bits " + imp.bitDepth);
+	comY = 0;
+	comX = 0;
+	
+	min_fixed_thresh = 10;
+	
+	// do we need to think about mag being squared here for xz plane?
+	mag = 20.4*1.34;  // 20.4 number calculated somewhere...
+	px_size_um = 6.5;
+	object_space_px_size = px_size_um/mag;
+	
+	fi = imp.getOriginalFileInfo();  // need original file info apparently
+	h = imp.getHeight();
+	w = imp.getWidth();
+	nSlices = imp.getNSlices();
+	
+	y_spacing = trg_dist;
+	// print("y spacing: " + y_spacing + "um");
+
+	IJ.run(imp, "Rotate 90 Degrees Left", "");
+	IJ.run(imp, "Set Scale...", "distance=1 known="+object_space_px_size+" unit=µm");
+	imp.setRoi(8, 0, 992, 1280);  // do processing on imp2, keep imp
+	imp.crop();
+	
+	imp2 = new Duplicator().run(imp);
+
+	IJ.run(imp2, "Z Project...", "projection=[Max Intensity]");
+	// unfortunately can't avoid the Z project appearing in new window,
+	// is there a workaround? Means I have to use getImage.
+	imp_mip = IJ.getImage();
+	imp2.close();
+	print(imp_mip);
+	imp_mip.setRoi(0, 0, 992, 1280);
+	ImageConverter.setDoScaling(true);
+
+	IJ.run(imp_mip, "8-bit", "");
+	
+	// first get min threshold (110% of mean)
+	IJ.run("Set Measurements...", "mean min max standard center redirect=None");
+	IJ.run("Clear Results");
+	IJ.run(imp_mip, "Measure", "");
+	rt = ResultsTable.getResultsTable();
+	mean = rt.getValue("Mean", 0);
+	min = rt.getValue("Min", 0);
+	min_thresh = mean*1.1;
+	min_thresh = Math.max(min_fixed_thresh, min_thresh);
+	if (rt.getValue("StdDev", 0) < mean ){
+		imp.changes = false;
+		imp.close();
+		imp_mip.changes = false;
+		imp_mip.close();
+		print("Image probably empty! Skipping");
+		return new int[]{0, 0, 0, 1};
+	};
+	
+	IJ.run(imp_mip, "Auto Threshold", "method=Otsu white setthreshold show");
+
+	// set threshold as minimum of otsu and 110% of mean for robustness
+	logString = IJ.getLog();
+	logArray = logString.split("\n");
+	otsustr = logArray[logArray.length-1];
+	otsu_val = otsustr.split(": ");
+	otsu_val_int = Integer.parseInt(otsu_val[1]);
+	
+	print("Final thresh: " + Math.max(otsu_val_int, min_thresh));
+	IJ.setThreshold(imp_mip, Math.max(otsu_val_int, min_thresh), 65535, null);
+	
+	// get particles 
+	// rt = ResultsTable.getResultsTable();
+	print("minimum particle size: " + min_particle_size);
+
+	IJ.run("Set Measurements...", "area mean min centroid center bounding limit redirect=None decimal=3");
+	IJ.run(imp_mip, "Analyze Particles...", "size="+min_particle_size+"-Infinity pixel show=Nothing display clear include");
+
+	nResults = rt.size();
+	if (nResults < 1){
+		imp.changes = false;
+		// imp.close();
+	
+		imp_mip.changes = false;
+		// imp_mip.close();
+		print("No particles found!");
+		return new int[]{0, 0, 0, 1};
+	}
+		
+	// can do x and z with the MIP
+	// get max particle
+	biggest_particle = 0;
+	max_area = 0;
+	for (int n=0; n<nResults; n++){
+		rt = ResultsTable.getResultsTable();
+		area = rt.getValue("Area", n);
+		// print("successfully got area");
+		if (area > max_area){
+			max_area = area;
+			biggest_particle = n;
+		};
+	}
+	comX = rt.getValue("YM",biggest_particle);  // we rotated our image, so YM.
+	middle_x = w/2*object_space_px_size;
+	comX = comX - middle_x;
+	
+	// z with similar method
+	comZ = rt.getValue("XM",biggest_particle);  // we rotated our image, so YM.
+	// print("Try BX");
+	top_bbox_z = rt.getValue("BX",biggest_particle);
+	// print("Trying Width");
+
+	from_bottom_bbox_z = h*object_space_px_size - top_bbox_z - 
+		rt.getValue("Width",biggest_particle) - h*object_space_px_size*0.05;
+	// want to set distance from bottom to about 5% of h
+	// mutliply by 10 since encoded as 10 unit = 1um in mmgr
+	zpos = -(from_bottom_bbox_z)*Math.sin(35*Math.PI/180)*10;
+	print("z_pos calculated (um): " + zpos);
+	if (Math.abs(zpos) > maxZ){
+		print("Exceeded max Z shift, limiting to " + maxZ + "um");
+		zpos = zpos * (maxZ/Math.abs(zpos));
+	}
+	
+	// y needs to look at stack (todo, neaten this code)
+
+	imp_ots = new Duplicator().run(imp);  // annoying workaround for autothresholder converting to 8bit
+	IJ.run(imp_ots, "Auto Threshold", "method=Otsu white setthreshold show stack use_stack_histogram");
+	imp_ots.changes = false;
+	// imp_ots.close();
+	
+	logString = IJ.getLog();
+	logArray = logString.split("\n");
+	otsustr = logArray[logArray.length-1];
+	otsu_val_stack = otsustr.split(": ");
+	otsu_val_stack_int = Integer.parseInt(otsu_val_stack[1]);
+
+	IJ.run(imp, "Subtract...", "value="+otsu_val_stack_int+" stack");  // easiest way to "threshold mask"
+	IJ.run("Clear Results");
+	IJ.run("Set Measurements...", "mean min max center redirect=None");
+	y_times_value = 0;
+	sum_value = 0;
+	IJ.run("Clear Results");
+	for (y = 0; y < nSlices; y++){
+		imp.setSlice(y+1);
+		IJ.run(imp, "Measure", "");
+		value = rt.getValue("Mean", y);
+		sum_value += value;
+		y_times_value += y*value;
+	}
+	print("comX in pixels: " + comX);
+	comY = y_times_value/sum_value;
+	middle_y = (nSlices/2 - 1); //we've been counting from zero;
+	comY -= middle_y;  // need to work out signs of this shift in stage coords
+	// print("comY in slices: " + comY);
+	comY *= y_spacing;  // get real distances
+	
+	print("comX in um: " + comX);
+	print("comY in um: " + comY);
+	print("zpos in um: " + zpos);

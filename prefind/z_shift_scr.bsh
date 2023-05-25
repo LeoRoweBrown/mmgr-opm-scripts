@@ -1,0 +1,8 @@
+path = 
+originalpath = 
+
+PositionList pl = mm.positions().getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+
+apply_z_shift(path, originalpath, 500, n_pos, false);

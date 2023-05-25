@@ -1,0 +1,19 @@
+import org.micromanager.PositionList;
+
+// export well names and numbers
+savedir="E:/nina/widefield_20220224/";
+
+PositionList pl = mm.positions().getPositionList();
+
+BufferedWriter wells = new BufferedWriter(new FileWriter(savedir + "position_names.csv"));
+	n_pos = pl.getNumberOfPositions();
+	
+for(n=0; n<n_pos; n++){
+	mp = pl.getPosition(n);
+	wells.write(""+n);
+	wells.write(",");
+	wells.write(mp.label);
+	wells.write(",");
+	wells.write("\n");
+}
+wells.close();

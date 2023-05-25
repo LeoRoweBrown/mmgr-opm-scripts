@@ -1,0 +1,322 @@
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+import org.micromanager.internal.utils.MMException;
+
+import org.micromanager.data.DataProvider;
+import ij.process.ImageProcessor ;
+import org.micromanager.data.Image;
+import ij.ImageStack;
+import ij.ImagePlus;
+import ij.IJ;
+
+
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
+
+mmc = mm.getCMMCore();
+sc = mm.getScriptController();
+
+// print("In correct file");
+
+// Image while scanning; hardcoded positions for the spheroids
+// For FRET timelapse imaging of several fields
+// Deleted comments (see in 0.2_one_field)
+String zStageName = "ZAxis";
+String stageName = mmc.getXYStageDevice();
+String cam = "pco_camera_bis"; 	
+String acq = "acq_rfl"; 	
+port_xy = "COM1";
+
+DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
+Date date = new Date();
+
+savedir = "E:/nina/20220425_fixed_square/z_test/" + dateFormat.format(date) + "/";
+// savedir = "E:/nina/fixed_forNina_20211220/background/" + dateFormat.format(date) + "/";
+
+//straight_dir = savedir;
+//reflect_dir = savedir;
+new File(savedir).mkdirs();
+new File(savedir).mkdirs();
+
+filedir = "E:/acquisition control files/";
+
+sc.message("Cleaning up");
+/////////////////////////////////////////////////////////////////////
+// Clean everything before beginning
+cleanup(cam,"",stageName);
+sc.message("Successfully cleaned up");
+//sc.message("Test");
+// User-defined parameters
+/////////////////////////////////////////////////////////////////////
+
+// General parameters
+
+	// prefind params
+	max_z = -20000;
+	starting_z = -18000;
+	step_z = 500;
+	
+	update_z = true;
+	
+	mip_minfind_otsuthresh = 200; // minimum value for otsu thresh to
+							      // be considered to contain spheroid
+	pc_z_offset = 0.1; // percentage of z FOV to place bottom of spheroid at 
+
+	trg_dist = 10; //trigger distance in micron
+	double travel_speed = 10;  // travel speed mms/(?)
+	double scan_speed = 0.1; //0.01;/  // scan speed mm/s(?)
+	// double[] scan_speeds = {0.15; 0.1; 0.15; 0.15;}
+	y_scanwidth_um = 500;  // half of the total scan distance in um
+	movetimeout_s = 60;  // timeout for stage travel
+	scan_tries = 3;  // general retry count until skipping field
+	max_retries = 3;  // maximum number of retries before skipping
+	max_field_skips = 3; // maximum skips per run before stopping
+	max_dropped_frames = 1; // maximum dropped frames
+	numImages = 10;
+	
+	exposure_for_scan = y_scanwidth_um/(numImages*scan_speed);
+
+	filter_naming = true;
+	delete_mode = false; // delete files after acquiring
+
+
+/////////////////////////////////////////////////////////////////////
+// Filter wheel positions and laser channels
+
+// donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
+// (count from 0)
+int[] fw_pos = {2};
+int[] las_channels =  {2}; // DAQ channels corresponding to each fw pos
+int[] wavelengths = {457, 515, 561, 642};
+float[] amplitudes =  {5};
+int[] exposures  =  {3};
+
+/////////////////////////////////////////////////////////////////////
+
+if ( fw_pos.length + las_channels.length + amplitudes.length + exposures.length != fw_pos.length*4){
+	throw new MMException("Channel, laser, amplitudes or exposures arrays not same length");
+}
+
+PositionList pl = mm.positions().getPositionList();
+
+// get array of stage positions for the scan, dist_from_ctr = 
+// half of the total scan distance, is measured from centre of y_bg
+
+n_pos = pl.getNumberOfPositions();
+
+savename = "mrfp";
+
+savedir = "E:/nina/20220421_fixed_square/mrfp_stack_andor/";
+
+int[] x_pos = new int[n_pos];
+int[] y_pos = new int[n_pos];
+
+int[] new_z_positions = new int[n_pos];
+
+// get x y position arrays
+for (pos_i=0; pos_i<n_pos; pos_i++){
+	mp = pl.getPosition(pos_i);
+	x_pos[pos_i] = (int) Math.floor(mp.getX()); 
+	y_pos[pos_i] = (int) Math.floor(mp.getY());  
+	f = mp.get(zStageName);
+}
+
+n_z = (int) Math.floor(-(max_z - starting_z)/step_z);
+int[] z_pos = new int[n_z];
+for (zi = 0; zi < n_z; zi++){
+	z_pos[zi] = starting_z + step_z;
+}
+
+
+// LOG //////////////////////////////////////////////////////////////
+BufferedWriter log 
+	= new BufferedWriter(new FileWriter(savedir + "log.txt"));
+log.write("Start of log date: " + dateFormat.format(date) + "\n");
+log.flush();
+
+BufferedWriter debug 
+	= new BufferedWriter(new FileWriter(savedir + "debug.txt"));
+debug.write("Start of log date: " + dateFormat.format(date) + "\n");
+debug.flush();
+
+///////////////////////////////////////////////////////////////////////////////
+// Error counts //
+move_well_n_err = 0;
+setup_n_err = 0;
+scan_start_n_err = 0;
+scan_end_n_err = 0;
+
+///////////////////////////////////////////////////////////////////////////////
+
+
+Exception err_out; // setting up exception for this scope
+log_fieldinfo = "";
+
+mag = 20.4*1.34;
+px_size_um = 6.5;
+
+mmc.setCameraDevice(cam);
+	w = (int) mmc.getImageWidth();
+	h = (int) mmc.getImageHeight();
+	d = (int) mmc.getBytesPerPixel();
+	iD = (int) mmc.getImageBitDepth();
+
+// Move to the first position
+sc.message("Travel");
+travelToPositionRetry(
+	starting_z,x_pos[0], y_pos[0]-y_scanwidth_um/2,travel_speed,stageName,zStageName,
+	movetimeout_s,debug);
+skip_count = 0;
+
+time_begin = System.currentTimeMillis();
+sc.message("Time : " + time_begin);
+
+// ONLY ONE FILTER WHEEL POSITION/CHANNEL IMPLEMENTED
+mmc.setState("FW103H Filter Wheel", fw_pos[0]);
+
+PositionList pl_new = new PositionList();  // new empty pos list
+	
+for(f = 0; f < n_pos; f++) {  // fields
+	for (w = 0; w < fw_pos.length; w++) {
+		found = false;
+		z_current = starting_z;
+		bottom_y_position = 0;
+		while ( z_current > max_z && !found ){
+			z_current -= step_z;
+			z_str = "z" + z;
+			not_done = true;
+			n_try = 0;
+			
+			Date date = new Date();
+			datestr = dateFormat.format(date);
+			log_fieldinfo = "\n" + datestr + " Field: " + f + " ";
+			debug.write(log_fieldinfo);
+			debug.flush();
+
+			chan = las_channels[w];
+			
+			travelToPositionRetry(
+				z_current,x_pos[f],y_pos[f]-y_scanwidth_um/2,travel_speed,stageName,zStageName,movetimeout_s,debug);
+				
+			mmc.setExposure(exposure_for_scan);
+			mmc.setProperty(cam, "Triggermode","Internal");  
+			mmc.prepareSequenceAcquisition(cam);
+
+			cb = mm.data().getCoordsBuilder().z(0).c(0).p(0).t(0);
+				
+			mmc.setXYPosition(x_pos[f], y_pos[f]+(y_scanwidth_um/2));
+			mmc.startSequenceAcquisition(numImages, 0, true);
+			int curFrame = 0;
+
+			ImageStack stack;
+			ImagePlus imgplus;
+			writeToFile("E:/acquisition control files/las_control.txt", "2,2");
+			
+			while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+			   if (mmc.getRemainingImageCount() > 0) {
+				  tagged = mmc.popNextTaggedImage();
+				  // Convert to an Image at the desired channel.
+				  cbuild = cb.z(curFrame).c(0).p(0).t(0).build();
+				  image = mm.data().convertTaggedImage(tagged, 
+							 cbuild, null);
+
+					iProcessor = mm.data().ij().createProcessor(image);           
+				  
+					if (curFrame == 0){
+						imgplus = new ImagePlus("z_stack", iProcessor);
+						stack = imgplus.getImageStack();
+					}
+					else stack.addSlice(iProcessor);
+					// stack.addSlice(iProcessor);
+				  curFrame++;
+			   }
+			   else { mmc.sleep(5); }
+			}
+			writeToFile("E:/acquisition control files/las_control.txt", "2,0");
+			// do imageJ stuff for prefind
+			imgplus.setStack(stack);
+			imgplus.show();
+
+			z = IJ.runMacroFile(
+				"C:\\Users\\OPMuser\\Documents\\micromanager\\mmgr-opm-scripts\\utils\\OPM_AF_analyse.ijm",
+				mip_minfind_otsuthresh + "");
+			z = Integer.parseInt(z);
+			z_real = z_current;
+			if (z > 0) {
+				found = true;
+				// convert z from px, 10 because encoded in  1um -> 0.1um for some reason
+				z_real = z_current - (10 * px_size_um * h * Math.sin(35*Math.PI/180)/mag)*(1-pc_z_offset);
+			} else {
+				sc.message("Failed to find spheroid at this z: " + z_current);
+			}
+			new_z_positions[f] = (int)z_real;
+		} //z 
+		
+
+	} // fw loop
+	sc.message("Finished filter loop");
+
+	mp = pl.getPosition(f);
+	label = mp.getLabel();
+	x = (int) Math.floor(mp.getX()); 
+	y = (int) Math.floor(mp.getY());  
+	msp = new MultiStagePosition(stageName, x, y, zStageName, new_z_positions[f]);
+	if (found) msp.setLabel(label);
+	else msp.setLabel("!"+label);
+	pl_new.addPosition(msp);
+
+	// Move to the next position/field
+	g = f < (n_pos-1) ? f+1 : 0;
+	travelToPositionRetry(
+		starting_z,x_pos[g],y_pos[g]-y_scanwidth_um/2,travel_speed,stageName,zStageName,movetimeout_s,debug);
+} // field loop
+
+if (update_z){
+	mm.positions().setPositionList(pl_new);
+}
+
+time_end = System.currentTimeMillis();
+delta_t = Math.max(0,Math.round((time_end - time_begin)/1000)); // seconds
+sc.message("Total took " + delta_t + "s");		
+
+// reset filter position
+mmc.setState("FW103H Filter Wheel", fw_pos[0]);
+
+// save well names
+BufferedWriter wells = new BufferedWriter(new FileWriter(savedir + "position_names.csv"));
+	n_pos = pl.getNumberOfPositions();
+	
+	
+BufferedWriter new_z = new BufferedWriter(new FileWriter(savedir + "new_z.csv"));
+	
+for(n=0; n<n_pos; n++){
+	mp = pl.getPosition(n);
+	wells.write(""+n);
+	wells.write(",");
+	wells.write(mp.label);
+	wells.write(",");
+	wells.write("\n");
+	new_z.write(new_z_positions[n] + "\n");
+}
+wells.close();
+new_z.close();
+
+tot_err = move_well_n_err + setup_n_err + scan_start_n_err + scan_end_n_err;
+
+log.write("\n Ended with " + tot_err + " error(s):\n");
+log.write(move_well_n_err + " moving to well error(s)\n");
+log.write(setup_n_err + " setting up scan error(s)\n");
+log.write(scan_start_n_err + " scan starting error(s)\n");
+log.write(scan_end_n_err + " scan end error(s)\n");
+log.write(" Number of channels: " + fw_pos.length);
+log.flush();
+log.close();
+debug.close();

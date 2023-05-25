@@ -1,0 +1,33 @@
+import org.micromanager.PositionList;
+import org.micromanager.StagePosition;
+import org.micromanager.MultiStagePosition;
+import java.lang.*;
+import java.util.*;
+
+xyStage = mmc.getXYStageDevice();
+zStage = mmc.getFocusDevice();
+
+PositionList new_pl = new PositionList();
+PositionList pl = mm.positions().getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+for (i = 0; i<n_pos; i++) {
+	old_pos = pl.getPosition(i);
+	pos_label = old_pos.getLabel();
+	print(pos_label);
+	MultiStagePosition msp = new MultiStagePosition();
+	StagePosition sp = new StagePosition();
+	sp.x = old_pos.x;
+	sp.y = old_pos.y;
+	sp.stageName = xyStage;
+	sp.numAxes = 2;
+	msp.setDefaultXYStage(xyStage);
+	msp.setDefaultZStage(zStage);		
+	msp.add(sp);
+	
+	label = "New"+pos_label; 
+	msp.setLabel(label);
+	new_pl.addPosition(msp);
+}
+
+mm.positions().setPositionList(new_pl);

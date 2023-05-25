@@ -1,0 +1,37 @@
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import org.micromanager.PositionList;
+
+int[][] get_rows_and_cols(){
+	row_pat_str = "(?<=Row[-\\s_])[A-Z]+";
+	Pattern row_pattern = Pattern.compile(row_pat_str);
+	col_pat_str = "(?<=Column[-\\s_])[0-9]+";
+	Pattern col_pattern = Pattern.compile(col_pat_str);
+
+	PositionList pl = mm.positions().getPositionList();
+	n_pos = pl.getNumberOfPositions();
+	
+	int[][]rows_cols=new int[n_pos][2];
+	
+	int[] col = new int[n_pos];
+	int[] row = new int[n_pos];
+	
+	int[] included = new int[n_pos];
+
+	for(n=0; n<n_pos; n++){
+		Matcher row_m = row_pattern.matcher(pl.getPosition(n).label);
+		Matcher col_m = col_pattern.matcher(pl.getPosition(n).label);
+		row_m.find();
+		col_m.find();
+		
+		row_str = row_m.group(0);
+		col_str = col_m.group(0);
+		
+		col[n] = Integer.parseInt(col_str);
+		row[n] = (int)(row_str.charAt(0)) - (int)'A' + 1;
+		rows_cols[n][0] = row[n];
+		rows_cols[n][1] = col[n];
+	}
+	
+	return rows_cols;
+}

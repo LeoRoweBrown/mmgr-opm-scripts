@@ -1,0 +1,30 @@
+// Use this to set up before autofocus if crashing is an issue and plate is flat enough
+
+zStageName = "ZAxis";
+
+PositionList pl = mm.positions().getPositionList();
+// pl = gui.getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+f_sum = 0;
+
+for (pos_i=0; pos_i<n_pos; pos_i++){
+	mp = pl.getPosition(pos_i);
+	f = mp.getZ();
+	print(f);
+
+	// if no ZAxis in the position list, get it from current value
+	if (f == null){
+		f = mmc.getPosition(zStageName);
+	}
+	f1[pos_i] = (int) Math.floor(f);
+	f_sum += f;
+}
+
+f_average = f_sum/n_pos;
+
+for (pos_i=0; pos_i<n_pos; pos_i++){
+	mp = pl.getPosition(pos_i);
+	spz = mp.get(zStageName);
+	spz.set1DPosition(zStageName, f_average);
+}

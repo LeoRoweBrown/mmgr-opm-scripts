@@ -1,0 +1,129 @@
+// load x y z shifts from prefind and apply to positions list
+import org.micromanager.PositionList;
+import org.micromanager.StagePosition;
+import org.micromanager.MultiStagePosition;
+
+import org.micromanager.PositionList;
+import org.micromanager.internal.utils.MMException;
+import java.lang.*;
+import java.util.*;
+
+int apply_z_shift(String path, String originalpath, int max_diff, int n_pos, boolean use_mean){
+
+	csv_path = path + "coverslip_z.csv";
+	old_csv_path = originalpath + "coverslip_z.csv";
+
+	PositionList pl = mm.positions().getPositionList();
+	n_pos_full = pl.getNumberOfPositions();
+	print("n_pos_full " + n_pos_full);
+	
+	if (n_pos_in == null || n_pos_in == 0 || n_pos > pl.getNumberOfPositions() ){
+		n_pos = pl.getNumberOfPositions();
+	} else {
+		use_mean = true;  // use mean shift if we dont compute z shift for each well (n_pos < n_pos_full) e.g. 20
+	}
+
+	xyStage = "XYStage";
+	zStage = "ZAxis";
+
+	int x_shift = 0;
+	int y_shift = 0;
+	int z_new = 0;
+
+	BufferedReader br = new BufferedReader(new FileReader(csv_path));
+	String line = new String();
+
+	BufferedReader old_br = new BufferedReader(new FileReader(old_csv_path));
+	String old_line = new String();
+
+	PositionList pl_new = new PositionList();
+	MultiStagePosition msp;
+	n = 0;
+	i = 0;
+	int[] failed = new int[n_pos_full]; 
+	double[] z_shifts = new double[n_pos_full];
+	double z_shift_sum = 0;
+
+	while ((line = br.readLine()) != null && n < n_pos) {
+		// get current pos
+		old_line = old_br.readLine();
+		
+		new_cslip_z = Double.parseDouble(line);
+		old_cslip_z = Double.parseDouble(old_line);
+		//print(values[0]);
+		z_shift = new_cslip_z - old_cslip_z;
+
+		if (Math.abs(z_shift) < max_diff){
+			failed[n] = 0;
+		} else{
+			z_shift = max_diff*z_shift/Math.abs(z_shift);
+			failed[n] = 1;
+		}
+		z_shift_sum += z_shift;
+		z_shifts[n] = z_shift;
+		
+		mp = pl.getPosition(n);
+
+		print(mp.label + " z shift: " + z_shifts[n]);
+		n++;
+		
+	}
+
+	z_shift_mean = z_shift_sum/n_pos;
+	// stdev
+	sq_diff = 0;
+
+	for (n=0; n<n_pos; n++){
+		sq_diff += (z_shifts[n] - z_shift_mean)*(z_shifts[n] - z_shift_mean);
+	}
+	stdev = Math.sqrt(sq_diff/n_pos);
+	outlier_thresh = 3*stdev;
+	print("outlier thresh: " + outlier_thresh);
+	// recompute mean without outliers
+	z_shift_sum = 0;
+	i = 1;
+	for (n=0; n<n_pos; n++){
+		if (Math.abs(z_shifts[n]-z_shift_mean) < outlier_thresh && failed[n] == 0){
+			z_shift_sum += z_shifts[n];
+			print("z_shift in mean: " + z_shifts[n]);
+			i++;
+		}
+	}
+	z_shift_mean = z_shift_sum/i;
+	
+	sc.message("Mean coverslip shift is: " + z_shift_mean);
+	
+	for (n=0; n<n_pos_full; n++){
+		z_shift = 0;
+		if (failed[n] == 1 || use_mean) {
+			z_shift = z_shift_mean;
+		} else {
+			z_shift = z_shifts[n];
+		}
+		// get current pos
+		mp = pl.getPosition(n);
+		label = mp.getLabel();
+		
+		
+		x_i = (int) Math.floor(mp.getX()); 
+		y_i = (int) Math.floor(mp.getY());
+		z_i = (int) Math.floor(mp.getZ()); 
+		
+		z_new = (int) Math.round(z_i + z_shift);
+			
+		msp = new MultiStagePosition(xyStage, x_i, y_i, zStage, z_new);
+		
+		msp.setLabel(label);
+		pl_new.addPosition(msp);
+		print("n " + n + label); 
+			
+	}
+
+	mm.positions().setPositionList(pl_new);
+	return (int)(Math.round(z_shift_mean));
+}
+
+int apply_z_shift(String path, String originalpath, int max_diff){
+	return apply_z_shift(path, originalpath, max_diff, null, false);
+}
+

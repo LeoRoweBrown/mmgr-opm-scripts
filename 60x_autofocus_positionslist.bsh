@@ -1,0 +1,132 @@
+// 60x autoprefind script
+
+import org.micromanager.PositionList;
+import org.micromanager.internal.utils.MMException;
+import java.lang.*;
+import java.util.*;
+import ij.IJ;
+import ij.ImagePlus;
+import ij.process.ImageProcessor;
+
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/libraries/travelControl.bsh");
+
+sc = mm.getScriptController();
+
+PositionList pl = mm.positions().getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+xyStage = "XYStage";
+zStageName = "ZAxis";
+travel_speed = 10;
+movetimeout_s = 30;
+
+//// autofocus settings
+// methods: <[JAF(TB), Duo, HardwareFocusExtender, OughtaFocus, JAF(H&P)]>
+// only really use JAF methods
+
+af_method = "JAF(H&P)";
+
+afm = mm.getAutofocusManager();
+afm.setAutofocusMethodByName(af_method);
+afmm = afm.getAutofocusMethod();
+afmm.applySettings();
+
+prop_names = afmm.getPropertyNames();
+sc.message("Property names:");
+for (n=0; n<prop_names.length; n++){
+	sc.message(prop_names[n]);
+	sc.message(afmm.getPropertyValue(prop_names[n]));
+}
+
+// JAF settings, units are microns/10
+step_size_coarse = 100;
+step_num_coarse = 10;
+step_size_fine = 20;
+step_num_fine = 5;
+threshold = 0.02;
+crop_ratio = 0.5;
+min_score = 3e7;
+statistical_min_score = false;
+
+extra_z_shift = -400;  // for OPM optimising light-sheet where there is less scatter?
+
+/*afmm.setAutofocusMethodByName(af_method);
+
+afmm.setPropertyValue("1st step size", step_size_coarse);
+afmm.setPropertyValue("1st step number", step_num_coarse);
+afmm.setPropertyValue("2nd step size", step_size_fine);
+afmm.setPropertyValue("2st step number", step_num_fine);
+afmm.setPropertyValue("Threshold", threshold);
+afmm.setPropertyValue("Crop ratio", crop_ratio);
+
+// afmm.saveSettings()
+afmm.applySettings();*/
+
+// run autofocus on all positions
+
+//n_pos = 5;
+scores_sum = 0;
+double[] scores = new double[n_pos];
+
+for (pos_i=0; pos_i<n_pos; pos_i++){
+	sc.message("field " + (pos_i+1) + " out of " + n_pos);
+	mp = pl.getPosition(pos_i);
+	x = (int) Math.floor(mp.getX()); 
+	y = (int) Math.floor(mp.getY());
+	f = (int) Math.floor(mp.getZ());
+
+	travelToPositionRetry(
+		f, x, y, travel_speed, xyStage, zStageName, movetimeout_s);
+	
+	// autofocus:
+	sc.message("Running autofocus");
+	afmm.fullFocus();
+	image = mm.live().snap(true);
+
+	//sc.message("Autofocus complete");
+	// new position
+	f_new = mmc.getPosition(zStageName);
+	f_new += extra_z_shift;
+	// compute offset and replace
+	offset = f_new - f;
+	sc.message("Offset: " + offset);
+	spz = mp.get(zStageName);
+	spz.set1DPosition(zStageName, f_new);
+	
+	Thread.sleep(250);
+	ImagePlus iplus = IJ.getImage();
+	ImageProcessor ip = iplus.getProcessor();
+	score = afmm.computeScore(ip);
+	print("score: "+ score);
+	scores[pos_i] = score;
+	scores_sum += score;
+}
+
+// print("scores: " + scores);
+score_mean = scores_sum/n_pos;
+stdev = 0;
+sqresid = 0;
+if (statistical_min_score){
+	for (s_i=0; s_i < n_pos; s_i++){
+		sqresid += Math.pow(scores[s_i] - score_mean, 2);
+	}
+	stdev = Math.sqrt(sqresid/n_pos);
+	min_score = score_mean - 2*stdev;
+	print("stdev based min score: " + min_score);
+}
+
+ArrayList low_score_fields = new ArrayList();
+ArrayList low_scores = new ArrayList();
+
+// process scores - do by statistics?
+for (s_i=0; s_i < n_pos; s_i++){
+	if (scores[s_i] < min_score){
+		low_score_fields.add(s_i);
+		low_scores.add(scores[s_i]);
+	}
+}
+
+print("POSSIBLE BAD FOCI:");
+print("fields: " + low_score_fields);
+print(low_scores);
+

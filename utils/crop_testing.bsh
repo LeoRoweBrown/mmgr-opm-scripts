@@ -1,0 +1,41 @@
+// crop testing
+import ij.plugin.FolderOpener;
+import ij.plugin.ZProjector;
+import ij.IJ;
+import ij.getInfo;
+import java.lang.*;
+import java.util.*;
+
+min_otsu = 200;
+
+imp = FolderOpener.open("E:/nina/20220421_fixed_square/main_upto_H/22-04-21/19-15-53/run_0/field_0/561/2/acq_rfl/", "");
+imp = ZProjector.run(imp,"max");
+imp.setRoi(0,8,1280,992);
+imp = imp.crop();
+IJ.run(imp, "Auto Threshold", "method=Otsu white show");
+logString = IJ.getLog();
+
+imp.show();
+
+logArray = logString.split("\n");
+otsustr = logArray[logArray.length-1];
+otsu_val = otsustr.split(": ");
+print(otsu_val[1]);
+
+path = "E:/nina/20220421_fixed_square/main_upto_H/22-04-21/19-15-53/run_0/field_0/561/2/acq_rfl/MAX_acq_rfl-1.txt";
+IJ.run(imp, "Save XY Coordinates...",
+	"background=0 save=" + path);
+
+xy = IJ.openAsString(path);
+xy_lines = xy.split("\n");
+
+bottom_y = 0;
+for (i=0; i<xy_lines.length; i++){
+	xyv = xy_lines[i].split("\t");
+	yval = Integer.parseInt(xyv[1]);
+	if (yval > bottom_y){
+		bottom_y = yval;
+	}
+	
+}
+print(bottom_y);

@@ -1,0 +1,6 @@
+// update positions based on previous acq
+
+run = 2;
+savedir = 
+
+update_pos_xy(savedir, run, "561", 2, trg_dist, 65, 65, 0);

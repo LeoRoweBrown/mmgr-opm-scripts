@@ -1,0 +1,307 @@
+// 4x prefind_functions
+
+import ij.IJ;
+import ij.measure.ResultsTable;
+import ij.plugin.ImageCalculator;
+import ij.ImagePlus;
+import ij.process.ImageProcessor;
+import ij.ImageStack;
+import org.micromanager.PositionList;
+import ij.WindowManager;
+import org.micromanager.StagePosition;
+import org.micromanager.MultiStagePosition;
+// import ij.process.ImageStatistics;
+
+ImagePlus get_bg_stack(root_dir, fieldnames, bg_scale){		
+
+	// get background for each slice by taking average of widefield 4x images to
+	// improve performance by reducing effect of autofluorescence on prefind
+	
+	nfields = fieldnames.length;
+	
+	// get first stack
+	IJ.run("Image Sequence...", 
+		"open="+root_dir+"\\" + fieldnames[0] + "\\z_00.tif sort");
+	ImagePlus imp_bg = WindowManager.getImage(fieldnames[0]);
+	imp_bg.setTitle("bg");
+	IJ.run(imp_bg, "32-bit", "");
+	IJ.run(imp_bg, "Divide...", "value="+nfields+" stack");
+	
+	for (f_i = 1; f_i < nfields; f_i++){
+		IJ.run("Image Sequence...",
+			"open="+root_dir+"\\" + fieldnames[f_i] + "\\z_00.tif sort");
+		ImagePlus imp1 = WindowManager.getImage(fieldnames[f_i]);
+		
+		IJ.run(imp1, "32-bit", "");
+		IJ.run(imp1, "Divide...", "value="+nfields+" stack");
+	
+		ImageCalculator ic = new ImageCalculator();
+		//ImagePlus imp_bg = 
+		ic.run("Add 32-bit stack", imp_bg, imp1);  // returns null
+		
+		imp1.changes = false;
+		imp1.close();
+	}
+	IJ.run(imp_bg, "Multiply...", "value="+bg_scale+ " stack");
+	return imp_bg;
+}
+
+int[] find_best_xyz(imp, spheroid_px_diameter, min_particle_size, method){
+	// Find the location of the most likely spheroid candidate
+	// parameters:
+	// imp (ImagePlus object): input stack
+	// spheroid_px_diameter (int): estimated diameter of spheroid in pixels 
+	// method (str): method to use to determine best candidate - e.g.
+	//		"biggest", "brightest", "biggest_and_brightest" (default)
+	// returns int[] 2 element list of x and y positions in pixels
+	
+	// width, height, channels, slices, frames
+	dimensions = imp.getDimensions();
+	nslices = dimensions[3];
+	n_max_pixels = (spheroid_px_diameter*spheroid_px_diameter);
+
+	// print("in xyz");
+	// print(imp);
+
+	thresh_n_sum = 0;
+	for (n=0; n<nslices; n++){
+		imp.setSlice(n+1);
+		ip = imp.getProcessor();
+
+		// OLD METHOD
+		/* histcounts = ip.getHistogram(256);  // 8 bit
+
+		i = 1;
+		// print("histcounts.length: " + histcounts.length);
+		sumcounts = 0;
+		while (sumcounts < n_max_pixels){
+			sumcounts += histcounts[histcounts.length - i];
+			i++;
+			// print(sumcounts);
+		}
+		thresh_n_sum += (histcounts.length - i + 1)*(ip.max-ip.min)/256 + ip.min; // 8 bit to 16 bit
+		*/ 
+
+		// NEW METHOD
+		histcounts = ip.getHistogram();  // 16 bit
+		sumcounts = 0;
+		i = (int)Math.ceil(ip.getMax());  // start at max, saves (some) time
+		while (sumcounts < n_max_pixels){
+			sumcounts += histcounts[i];
+			i--;
+			// print(sumcounts);
+		}
+		thresh_n_sum += i; // 8 bit to 16 bit
+	}
+	imp.setSlice(1);
+	thresh = thresh_n_sum/nslices;
+	print("thresh: " + thresh);
+	IJ.setThreshold(imp, thresh, 65535, null);
+
+	mask_pixel_count = 0;
+	new_thresh = thresh;
+	// improve threshold? other attempts at this...
+	/*
+	do { 
+		IJ.run("Set Measurements...", "area limit redirect=None decimal=3");
+		rt = ResultsTable.getResultsTable();
+		IJ.run(imp, "Clear Results", "");
+		IJ.run(imp, "Measure", "");
+		mask_pixel_count = rt.getValue("Area", 0);
+		IJ.setThreshold(imp, thresh, 65535, null);
+		new_thresh *= 1.2;
+	} while (mask_pixel_count < n_max_pixels);
+	
+	thresh = (new_thresh + thresh)/2;
+
+	IJ.run("Set Measurements...", "area limit redirect=None decimal=3");
+	rt = ResultsTable.getResultsTable();
+	IJ.run(imp, "Measure", "");
+	mask_pixel_count = rt.getValue("Area", 0);
+
+	// ensure not too many pixels to calculate particles ? Try this sometime (TODO)
+	/* IJ.run("Set Measurements...", "area limit redirect=None decimal=3");
+	rt = ResultsTable.getResultsTable();
+	IJ.run(imp, "Measure", "");
+	mask_pixel_count = rt.getValue("Area", 0);
+	*/
+	
+	rt = ResultsTable.getResultsTable();
+	IJ.run("Set Measurements...", "area mean min centroid stack redirect=None decimal=3");
+	IJ.run(imp, "Analyze Particles...", "size="+min_particle_size+"-Infinity display exclude clear include stack");
+	
+	// imp.changes=false;
+	// imp.close();
+	
+	nResults = rt.size();
+	print("n results: " + nResults);
+	new_thresh = thresh;
+	attempts = 0;
+	max_attempts = 10;
+
+	// if no particles found or too many found (detecting noise as particles):
+	while ((nResults < 1 || nResults > 20*nslices) && attempts < max_attempts){
+		print("Attempt " + attempts);
+		new_thresh *= 1.2;  // increase by 10% until particle is found
+		IJ.setThreshold(imp, new_thresh, 65535, null);
+		IJ.run(imp, "Analyze Particles...", "size="+min_particle_size+"-Infinity display exclude clear include stack");
+		nResults = rt.size();
+		print("Particles: " + nResults + " threshold: " + new_thresh);
+		attempts++;
+	}
+	if (attempts >= max_attempts && nResults < 1){
+		print("Warning: Failed to locate spheroid (no particles found)");
+		int[] xyz_centroid = {0, 0, 1};
+		return xyz_centroid;
+	}
+	
+	best_idx = 0;
+	best_metric = 0;
+	for (s_i = 0; s_i < nResults; s_i++){
+		mean = rt.getValue("Mean", s_i);
+		area = rt.getValue("Area", s_i);
+		centroid = rt.getValue("Mean", s_i);
+		mean_area_prod = mean*area;
+		// print(mean_area_prod);
+		if (method == "biggest"){
+			if (area > best_metric){
+				best_metric = area;
+				best_idx = s_i;
+			}
+		} else if (method == "brightest"){
+			if (mean > best_metric){
+				best_metric = mean;
+				best_idx = s_i;
+			}
+		} else { // default, biggest_and_brightest
+			if (mean_area_prod > best_metric){
+				best_metric = mean_area_prod;
+				best_idx = s_i;
+			}
+		}
+	}
+	print("Best index: " + best_idx);
+	print("Best metric " + best_metric);
+	x = (int)Math.round(rt.getValue("X", best_idx));
+	y = (int)Math.round(rt.getValue("Y", best_idx));
+	z = (int)rt.getValue("Slice", best_idx);
+	print("X: " + x + " Y: " + y + " Slice: " + z);
+
+	int[] xyz_centroid = {x, y, z};
+	return xyz_centroid;
+}
+
+String[] get_fieldnames(dir){
+	files = new File(root_dir).listFiles();
+	fieldnames = new ArrayList();
+	for (n=0; n<files.length; n++){
+		if (files[n].isDirectory()) fieldnames.add(files[n].name);
+	}
+	String[] fieldnames_arr = new String[fieldnames.size()];
+	fieldnames_arr = fieldnames.toArray(fieldnames_arr);
+	return fieldnames_arr;
+}
+
+PositionList calc_new_positions(root_dir, spheroid_px_diameter, min_particle_size, image_output_dir){
+	// find location of spheroids in 4x image (stacks) and update positionList accordingly
+	// get fieldnames
+	fieldnames = get_fieldnames(root_dir);
+	subtract_bg = false;
+	nfields = fieldnames.length;
+	scale_factor = 5.5;
+	ImagePlus bg_stack = get_bg_stack(root_dir, fieldnames, 0.95);
+
+	min_particle_size = 5; // TODO have this as option?
+	
+	original_pl = mm.positions().getPositionList();
+	npos_pl = original_pl.getNumberOfPositions();
+	
+	if (nfields != npos_pl){
+		throw new Exception(
+			"Number of fields in prefind acquisition and position list not equal! nfields: " + nfields + " npos: "+ npos_pl
+			);
+	}
+
+	new_pl = original_pl;
+	ImagePlus circled_spheres_imp;
+	ImageStack circled_spheres_stack;
+	
+	for (f_i = 0; f_i < nfields; f_i++){
+		msp = original_pl.getPosition(f_i);  // MultiStagePosition
+		IJ.run("Image Sequence...", 
+			"open="+root_dir+"\\" + fieldnames[f_i] + "\\z_00.tif sort");
+		ImagePlus imp = WindowManager.getImage(fieldnames[f_i]);
+
+		// attempt to remove background
+		ImageCalculator ic = new ImageCalculator();
+		ic.run("Subtract stack", imp, bg_stack);
+		print("imp");
+		print(imp);
+		xyz_arr = find_best_xyz(imp, spheroid_px_diameter, min_particle_size, "biggest_and_brightest");
+		// print("after xyz");
+		// print(imp);
+		
+		x_shift = ((xyz_arr[0] - 1004/2)*scale_factor)+50; 
+    	y_shift = ((xyz_arr[1] - 1002/2)*scale_factor)+250;
+
+    	new_msp = msp;
+    	x_new = msp.X - x_shift;
+    	y_new = msp.Y - y_shift;
+    	
+		label = msp.getLabel();
+
+		new_msp = new MultiStagePosition();
+		StagePosition sp = new StagePosition();
+		sp.x = x_new;
+		sp.y = y_new;
+		sp.stageName = "XYStage";
+		sp.numAxes = 2;
+		new_msp.setDefaultXYStage("XYStage");
+		new_msp.setDefaultZStage("ZAxis");		
+		new_msp.add(sp);
+		new_msp.setLabel(label);
+		
+    	new_pl.replacePosition(f_i, new_msp);
+
+    	ip = get_circled_img(imp, xyz_arr[0], xyz_arr[1], xyz_arr[2], spheroid_px_diameter*2);
+		if (f_i == 0) circled_spheres_stack = new ImageStack(ip.width, ip.height);
+		
+		circled_spheres_stack.addSlice(ip);
+		circled_spheres_stack.setSliceLabel(fieldnames[f_i], f_i+1);
+
+		imp.changes = false;
+		imp.close();
+	}
+	
+	circled_spheres_imp = new ImagePlus("circled_spheres", circled_spheres_stack);
+	if (image_output_dir != null) {
+		new File(image_output_dir).mkdirs();
+		IJ.saveAs(circled_spheres_imp, "Tiff", image_output_dir + "/circled_spheroids.tif");
+	}
+	circled_spheres_imp.changes = false;
+	circled_spheres_imp.close();
+	bg_stack.changes = false;
+	bg_stack.close();
+	return new_pl;
+}
+
+PositionList calc_new_positions(root_dir, fieldname, spheroid_px_diameter, min_particle_size){
+	return calc_new_positions(root_dir, fieldname, spheroid_px_diameter, min_particle_size, null);
+}
+
+PositionList calc_new_positions(root_dir, fieldname, spheroid_px_diameter){
+	return calc_new_positions(root_dir, fieldname, spheroid_px_diameter, 10, null);
+}
+
+
+ImageProcessor get_circled_img(imp, x, y, z, diameter){
+	print(imp);
+	ip = imp.getStack().getProcessor(z);
+	ip.setColor(65535);
+	xc = x-Math.round(diameter/2);
+	yc = y-Math.round(diameter/2);
+	ip.drawOval(xc, yc, diameter, diameter);
+	return ip;
+}
+
+

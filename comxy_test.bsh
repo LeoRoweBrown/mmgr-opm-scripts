@@ -1,0 +1,33 @@
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import org.micromanager.data.Datastore;
+import org.micromanager.display.DisplayWindow;
+import org.micromanager.PositionList;
+import org.micromanager.LogManager;
+import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.Coords;
+import org.micromanager.data.Coordinates;
+import org.micromanager.internal.utils.MMException;
+
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/helpers.bsh");
+source("C:/Users/OPMuser/Documents/micromanager/mmgr-opm-scripts/prefind/update_pos_xy_after_timepoint.bsh");
+
+mmc = mm.getCMMCore();
+sc = mm.getScriptController();
+
+String zStageName = "ZAxis";
+String stageName = mmc.getXYStageDevice();
+
+
+DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
+Date date = new Date();
+
+savedir = "E:/nina/20221125_live_plate4/main/22-11-25/19-46-18/";
+index = 2;
+
+trg_dist = 1.4; //trigger distance in micron
+
+update_pos_xy(savedir, index, "561", 2, trg_dist, 110, 110, bead_fields);
+// update_pos_xy(savedir, index, "561", 2, trg_dist, 100, 100, true, );

@@ -1,0 +1,67 @@
+// load x y z shifts from prefind and apply to positions list
+import org.micromanager.PositionList;
+import org.micromanager.StagePosition;
+import org.micromanager.MultiStagePosition;
+
+csv_path = "E:/nina/20230309_live_plate6/main/23-03-10/16-22-47/spheroid_coms/run_2/xy_com_shift.csv";
+// csv_rejection_path = "E:/nina/50_cell_2/prefind_output/22-05-30/15-19-15/mda_z/manual_reject.csv";
+
+import org.micromanager.PositionList;
+import org.micromanager.internal.utils.MMException;
+import java.lang.*;
+import java.util.*;
+
+
+PositionList pl = mm.positions().getPositionList();
+n_pos = pl.getNumberOfPositions();
+
+xyStage = "XYStage";
+zStage = "ZAxis";
+
+// Double[] x_shift = new Double[n_pos];
+// Double[] y_shift = new Double[n_pos];
+// Double[] z_shift = new Double[n_pos];
+
+int x_shift = 0;
+int y_shift = 0;
+int z_new = 0;
+
+
+BufferedReader br = new BufferedReader(new FileReader(csv_path));
+String line = new String();
+
+PositionList pl_new = new PositionList();
+MultiStagePosition msp;
+n = 0;
+i = 0;
+while ((line = br.readLine()) != null) {
+	// get current pos
+	mp = pl.getPosition(n);
+	label = mp.getLabel();
+	
+	String[] values = line.split(",");
+	//print(values[0]);
+	Double.parseDouble(values[1]);
+	
+	//print((int) Math.floor(Double.parseDouble(values[0])));
+	x_shift = (int) Math.floor(Double.parseDouble(values[1]));
+	y_shift = (int) Math.floor( Double.parseDouble(values[2]));
+	z_shift = (int) Math.floor( Double.parseDouble(values[3]));
+
+	// get current pos
+	x_i = (int) Math.floor(mp.getX()); 
+	y_i = (int) Math.floor(mp.getY());
+	z = (int) Math.floor(mp.getZ());
+	x_new = x_i + x_shift;
+	y_new = y_i + y_shift;
+	z_new = z + z_shift;
+
+	print(label + " x_new: " + x_new + " y_new: " + y_new + " z_new: " + z_new);
+	
+	msp = new MultiStagePosition(xyStage, x_new, y_new, zStage, z_new);
+	msp.setLabel(label);
+	pl_new.addPosition(msp);
+	n++;
+}
+
+mm.positions().setPositionList(pl_new);
