@@ -30,7 +30,9 @@ port_xy = "COM1";
 DateFormat dateFormat = new SimpleDateFormat("yy-MM-dd/HH-mm-ss");
 Date date = new Date();
 
-savedir = "E:/accelerator/French_20210921/main_withScatter/" + dateFormat.format(date) + "/";
+// savedir = "E:/nina/prefind_test_20220609/main/" + dateFormat.format(date) + "/";
+savedir = "E:/nina/slow_z/main/" + dateFormat.format(date) + "/";
+// savedir = "E:/nina/20220426_fixed_square/background/" + dateFormat.format(date) + "/";
 
 //straight_dir = savedir;
 //reflect_dir = savedir;
@@ -51,8 +53,9 @@ sc.message("Successfully cleaned up");
 // General parameters
 	trg_dist = 1.4; //trigger distance in micron
 	double travel_speed = 10;  // travel speed mms/(?)
-	double scan_speed = 0.14;  // scan speed mm/s(?)
-	dist_from_ctr = 500;  // half of the total scan distance in um
+	double scan_speed = 0.1; //0.01;/  // scan speed mm/s(?)
+	// double[] scan_speeds = {0.15; 0.1; 0.15; 0.15;}
+	dist_from_ctr = 200;  // half of the total scan distance in um
 	movetimeout_s = 60;  // timeout for stage travel
 	scan_tries = 3;  // general retry count until skipping field
 	max_retries = 3;  // maximum number of retries before skipping
@@ -60,14 +63,21 @@ sc.message("Successfully cleaned up");
 	max_dropped_frames = 1; // maximum dropped frames
 
 	filter_naming = true;
+	// REMEMBER TO CHANGE THIS!!!
 	test_mode = false; // delete files after acquiring
 	unset("z_offset");
 	z_offset = 0;//-100000;
 	y_offset = 0;
 
+	// under sample plate
+	// undersample_row_number = 5;
+	// undersample_col_factor = 5;
+	// cols = 
+
 // Time-lapse parameters 
-	n_run = 1;
-	run_interval = 30; // in minutes
+	n_run = 20;
+	// n_run = 1;
+	run_interval = 20; // in minutes
 	first_run =0; // 0-indexing
 
 // Saving parameters
@@ -81,12 +91,14 @@ sc.message("Successfully cleaned up");
 
 // donor exc and em, donor exc and acceptor em, direct acceptor exc and em.
 // (count from 0)
-int[] fw_pos = {4,2,1,0}; //,4}; 
-int[] las_channels = {0,2,3,0}; // ,0}; // DAQ channels corresponding to each fw pos
-// int[] wavelengths = {457, 515, 561, 642};
-int[] wavelengths = {488, 515, 561, 642};
-int[] amplitudes = {1,5,1,1}; // , 2};
-int[] exposures  = {5, 5,5,5}; //,8};
+unset("fw_pos");
+
+int[] fw_pos = {2}; // {3}; // //
+int[] las_channels =  {2}; //{1};//;  // DAQ channels corresponding to each fw pos
+int[] wavelengths = {457, 515, 561, 642};
+// int[] wavelengths =  {488, 515, 561, 642};
+float[] amplitudes = {5};// // {1};
+int[] exposures  =  {5};//
 
 /////////////////////////////////////////////////////////////////////
 
@@ -137,9 +149,17 @@ for(i = 0;i< n_fields;i++) {
 	y_end[i] = y_end[i] + y_offset;
 	y_bg[i] = y_bg[i] + y_offset;
 	f_pos[i] = f_pos[i] + z_offset;
+	mp = pl.getPosition(i);
+	if (mp.get(zStageName) == null){
+		sc.message("Replacing zeroes in ZAxis");
+		f_pos[i] = (int) Math.floor(mmc.getPosition(zStageName));
+	}
 	n_img[i] = (int) Math.ceil((double) (((double) y_end[i]) - ((double) y_bg[i])) / ((double) trg_dist)); 
 	n_tot_img = n_tot_img + n_img[i];
 };
+
+// check that ZAxis not set
+//		mp.get("ZAxis");
 
 ///////////////////////////////////////////////////////////////////////////////
 // Save parameters
@@ -238,7 +258,7 @@ for (index = 0; index < n_run; index++){  // runs
 	// Move to the first position
 	sc.message("Travel");
 	travelToPositionRetry(
-		f_pos[0],x_pos[0],y_bg[0],travel_speed,stageName,zStageName,movetimeout_s);
+		f_pos[0],x_pos[0],y_bg[0],travel_speed,stageName,zStageName,movetimeout_s,debug);
 	skip_count = 0;
 
 	sc.message("Starting run loop (" + index + "/" + (n_run-1) + ")");
@@ -490,7 +510,7 @@ for (index = 0; index < n_run; index++){  // runs
 		// Move to the next position/field
 		g = f < (n_fields-1) ? f+1 : 0;
 		travelToPositionRetry(
-			f_pos[g],x_pos[g],y_bg[g],travel_speed,stageName,zStageName,movetimeout_s);
+			f_pos[g],x_pos[g],y_bg[g],travel_speed,stageName,zStageName,movetimeout_s,debug);
 	} // field loop
 	sc.message("Run " + index +  " acquired!");	
 	time_end = System.currentTimeMillis();
@@ -502,7 +522,23 @@ for (index = 0; index < n_run; index++){  // runs
 			Thread.sleep(1000*(60*run_interval - delta_t));
 		}
 	}
-} // run loop
+} // <- bracket belongs to run loop
+// reset filter position
+mmc.setState("FW103H Filter Wheel", fw_pos[0]);
+
+// save well names
+BufferedWriter wells = new BufferedWriter(new FileWriter(savedir + "position_names.csv"));
+	n_pos = pl.getNumberOfPositions();
+	
+for(n=0; n<n_pos; n++){
+	mp = pl.getPosition(n);
+	wells.write(""+n);
+	wells.write(",");
+	wells.write(mp.label);
+	wells.write(",");
+	wells.write("\n");
+}
+wells.close();
 
 tot_err = move_well_n_err + setup_n_err + scan_start_n_err + scan_end_n_err;
 

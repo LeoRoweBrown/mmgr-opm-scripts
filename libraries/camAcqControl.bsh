@@ -87,6 +87,7 @@ Datastore[] acqImagesFromBuffer(datastores, conds, camNames, coordsBuilder, max_
 				if (logbuffer != null) logbuffer.write(" (ERROR) max: " + max_dropped + "\n");
 				if (logbuffer != null) logbuffer.flush();
 				cam_dropped_too_many_frames[i] = true;
+				throw new MMException("Exceeded max dropped frames");
 			} else {
 				sc.message("WARNING: Acquired with " + total_images_missing + " dropped frames");
 			}
@@ -131,8 +132,8 @@ Datastore createDatastore(cam_name, savedir, overwrite){
 				throw new IOException("File already exists, use overwrite=true "+
 				"when calling createDatastore if you want to overwrite");
 			}
-			sc.message("Overwriting previous attempt");
-			deleteDatastore(full_dir, true);  // delete if already exists (for retries)
+			sc.message("Overwriting previous attempt in " + full_dir);
+			deleteDatastore(cam_name, fileSaveFolderDir, true);  // delete if already exists (for retries)
 		}
 		sc.message("Creating TIFF stack in " + full_dir);
 		img_ds = mm.data().createMultipageTIFFDatastore(full_dir, false, false);
@@ -158,7 +159,7 @@ int deleteDatastore(cam_name, savedir, del_dir_bool){
 	System.gc();
 	full_dir = fileSaveFolderDir + cam_name + "/";
 	File dir = new File(full_dir);
-		
+	// sc.message("Attempting to delete");
 	if (dir.isDirectory()){
 		try {
 			file_names = new File(full_dir).list();
@@ -200,7 +201,7 @@ int deleteDatastore(cam_name, savedir, del_dir_bool){
 
 int deleteDatastore(cam_name, savedir){
 	// delete dir too by default
-	return deleteDatastore(savedir, true);
+	return deleteDatastore(cam_name, savedir, true);
 }
 
 

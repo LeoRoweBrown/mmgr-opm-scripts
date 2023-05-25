@@ -28,8 +28,8 @@ import org.micromanager.internal.utils.MMException;
 
 // Experiment 
 // platemap = "E:\\IBIN_Nina\\20201022_coregistration2\\platemap.xls";
-platemap =  "E:\\accelerator\\20210217_Bakal03_spheroids\\platemap.xls";
-platemap = "T:/IBIN_Nina/20201029_fixedPlate/platemap.xls";
+platemap =  "E:\\nina\\20211221_fixedAll\\platemap.xls";
+
 gen_z = false;
 fields_per_well = 1;// 180301 Hugh changed from 2
 field_x_dist = 200; //microns
