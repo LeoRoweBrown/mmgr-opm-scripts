@@ -111,7 +111,7 @@ int[] find_spheroid_xycom(ImagePlus imp, trg_dist, maxX, maxY, maxZ, min_particl
 	comX = comX - middle_x;
 	
 	// z with similar method
-	comZ = rt.getValue("XM",biggest_particle);  // we rotated our image, so YM.
+	comZ = rt.getValue("XM",biggest_particle);  // we rotated our image, so XM.
 	// print("Try BX");
 	top_bbox_z = rt.getValue("BX",biggest_particle);
 	// print("Trying Width");
